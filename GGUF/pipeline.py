@@ -99,7 +99,7 @@ class ImatrixPipeline:
         tokenizer.chat_template = (
             tokenizer.chat_template
             if tokenizer.chat_template
-            else "<s>{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end---|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
+            else "<s>{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}{% for message in messages %}{{'<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>' + '\n'}}{% endfor %}{% if add_generation_prompt %}{{ '<|im_start|>assistant\n' }}{% endif %}"
         )
 
         ensure_dir_exists(os.path.dirname(self.get_imatrix_dataset_filepath()))
@@ -296,10 +296,7 @@ if __name__ == "__main__":
         token=os.getenv("HF_TOKEN") or getpass("Provide your HF_TOKEN: "),
         model_id=input(f"Provide HF model ID ({default_model_id}): ") or default_model_id,
     )
-    if not (
-        os.path.exists(pipeline.get_imatrix_dataset_filepath())
-        and os.path.exists(pipeline.get_imatrix_filepath())
-    ):
+    if not os.path.exists(pipeline.get_imatrix_filepath()):
         pipeline.prepare_imatrix_samples()
         pipeline.convert_model()
         pipeline.calculate_imatrix()
