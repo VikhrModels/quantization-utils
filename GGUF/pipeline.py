@@ -160,8 +160,12 @@ class ImatrixPipeline:
                 "-b",
                 "512",
                 "--chunks",
-                "1000",
+                "1024",
                 "--mlock",
+                "--split-mode",
+                "none",
+                "-mg",
+                "0", # TODO: Add prompt for devices list
             ],
             "llama.cpp",
         )
