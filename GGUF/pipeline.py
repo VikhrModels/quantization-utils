@@ -1,4 +1,4 @@
-import getpass
+from getpass import getpass
 import os
 import time
 import logging
