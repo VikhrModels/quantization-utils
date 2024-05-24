@@ -1,0 +1,9 @@
+huggingface_hub
+datasets
+transformers
+Pillow
+scipy
+numba
+opencv-python
+sentencepiece
+git-python
