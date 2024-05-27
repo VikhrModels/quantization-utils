@@ -174,24 +174,26 @@ class ImatrixPipeline:
         model_dir = self.get_model_dir()
         ensure_dir_exists(model_dir)
         ensure_dir_exists(f"{model_dir}-GGUF")
-        self.logger.info(f"Downloading model {self.model_id}")
-        snapshot_download(self.model_id, local_dir=model_dir)
-        self.logger.info(f"Model downloaded to {model_dir}")
+        if not os.path.exists(self.get_model_dir()):
+            self.logger.info(f"Downloading model {self.model_id}")
+            snapshot_download(self.model_id, local_dir=self.get_model_dir())
+            self.logger.info(f"Model downloaded to {self.get_model_dir()}")
 
-        self.logger.info(f"Converting model {self.model_id}")
-        run_command(
-            self.logger,
-            [
-                "python",
-                "convert.py",
-                model_dir,
-                "--outtype",
-                "f16",
-                "--outfile",
-                self.get_quantized_filepath(Quant.F16),
-            ],
-            "llama.cpp",
-        )
+        if not os.path.exists(self.get_quantized_filepath(Quant.F16)):
+            self.logger.info(f"Converting model {self.model_id}")
+            run_command(
+                self.logger,
+                [
+                    "python",
+                    "convert.py",
+                    model_dir,
+                    "--outtype",
+                    "f16",
+                    "--outfile",
+                    self.get_quantized_filepath(Quant.F16),
+                ],
+                "llama.cpp",
+            )
 
     def init_llamacpp(self):
         current_os = platform.system()
