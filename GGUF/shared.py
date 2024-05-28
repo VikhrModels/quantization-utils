@@ -4,9 +4,7 @@ import os
 import platform
 import subprocess
 import sys
-import functools
 from enum import Enum
-import time
 from typing import AnyStr, List
 
 import git
@@ -57,11 +55,12 @@ class StreamWrapper:
 
     def write(self, data):
         if isinstance(self.stream, io.TextIOWrapper) and isinstance(data, bytes):
-            self.stream.write(data.decode('ascii'))
+            self.stream.write(data.decode("ascii"))
         elif isinstance(self.stream, io.BytesIO) and isinstance(data, str):
-            self.stream.write(data.encode('utf-8'))
+            self.stream.write(data.encode("utf-8"))
         else:
             self.stream.write(data)
+
 
 class ModelMixin:
     def __init__(self, model_id, cwd=None, *args, **kwargs):

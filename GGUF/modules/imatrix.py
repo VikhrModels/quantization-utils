@@ -1,10 +1,11 @@
 import os
 import random
 import time
+
 from datasets import load_dataset
+from shared import LoggerMixin, ModelMixin, Quant, ensure_dir_exists, run_command
 from tqdm import tqdm
 from transformers import AutoTokenizer
-from shared import LoggerMixin, ModelMixin, Quant, ensure_dir_exists, run_command
 
 IMATRIX_CMD = "./imatrix"
 STANDARD_CAL_DATA_DIR = os.path.join("resources", "standard_cal_data")

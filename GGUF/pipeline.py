@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 from typing import List
+
 from modules.convert import Convert
 from modules.imatrix import Imatrix
 from modules.quantize import Quant, Quantize
@@ -104,7 +105,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    
+
     # Propagate force flags
     if args.force:
         args.force_imatrix_dataset = True
@@ -122,8 +123,9 @@ if __name__ == "__main__":
 
     dirty = False
 
-    if args.force_imatrix_dataset or not os.path.exists(
-        imatrix.get_imatrix_dataset_filepath()
+    if args.force_imatrix_dataset or not (
+        os.path.exists(imatrix.get_imatrix_dataset_filepath())
+        or os.path.exists(imatrix.get_imatrix_filepath())
     ):
         dirty = True
         imatrix.prepare_imatrix_samples()

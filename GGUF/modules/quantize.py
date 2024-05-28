@@ -1,6 +1,6 @@
 import os
-from git import List
 
+from git import List
 from shared import LoggerMixin, ModelMixin, Quant, run_command
 
 DTYPE_FP16 = "float16"
@@ -38,32 +38,33 @@ class Quantize(LoggerMixin, ModelMixin):
                 run_command(
                     self.logger,
                     [
-                    "./quantize",
-                    # Do not use imatrix for upper quants, may lead to lower quality
-                    *(
-                        imatrix_attrs
-                        if quant not in {
-                            Quant.Q4_0,
-                            Quant.Q4_1,
-                            Quant.Q4_K,
-                            Quant.Q4_K_S,
-                            Quant.Q4_K_M,
-                            Quant.Q5_0,
-                            Quant.Q5_1,
-                            Quant.Q5_K,
-                            Quant.Q5_K_S,
-                            Quant.Q5_K_M,
-                            Quant.Q6_K,
-                            Quant.Q8_0,
-                            Quant.F16,
-                            Quant.BF16,
-                            Quant.F32,
-                        }
-                        else []
-                    ),
-                    converted_model_filepath,
-                    self.get_quantized_filepath(quant),
-                    quant.value,
-                ],
-                "llama.cpp",
-            )
+                        "./quantize",
+                        # Do not use imatrix for upper quants, may lead to lower quality
+                        *(
+                            imatrix_attrs
+                            if quant
+                            not in {
+                                Quant.Q4_0,
+                                Quant.Q4_1,
+                                Quant.Q4_K,
+                                Quant.Q4_K_S,
+                                Quant.Q4_K_M,
+                                Quant.Q5_0,
+                                Quant.Q5_1,
+                                Quant.Q5_K,
+                                Quant.Q5_K_S,
+                                Quant.Q5_K_M,
+                                Quant.Q6_K,
+                                Quant.Q8_0,
+                                Quant.F16,
+                                Quant.BF16,
+                                Quant.F32,
+                            }
+                            else []
+                        ),
+                        converted_model_filepath,
+                        self.get_quantized_filepath(quant),
+                        quant.value,
+                    ],
+                    "llama.cpp",
+                )

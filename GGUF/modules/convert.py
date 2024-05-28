@@ -1,15 +1,20 @@
 import json
 import os
-import re
 
 from huggingface_hub import snapshot_download
-
 from modules.quantize import (
     DTYPE_BF16,
     DTYPE_FP16,
     DTYPE_FP32,
 )
-from shared import LoggerMixin, ModelMixin, Quant, ensure_dir_exists, get_llamacpp, run_command
+from shared import (
+    LoggerMixin,
+    ModelMixin,
+    Quant,
+    ensure_dir_exists,
+    get_llamacpp,
+    run_command,
+)
 
 CONVERT_CMD = "convert.py"
 
@@ -20,7 +25,12 @@ class Convert(LoggerMixin, ModelMixin):
         self.token = token
 
         model_dir = self.get_model_dir()
-        snapshot_download(self.model_id, local_dir=model_dir, token=token, allow_patterns=["config.json"])
+        snapshot_download(
+            self.model_id,
+            local_dir=model_dir,
+            token=token,
+            allow_patterns=["config.json"],
+        )
         config_path = os.path.join(model_dir, "config.json")
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
@@ -28,7 +38,10 @@ class Convert(LoggerMixin, ModelMixin):
                 self.dtype = config.get("torch_dtype", DTYPE_FP32)
         else:
             self.dtype = DTYPE_FP32
-            self.warning(f"Config file not found at {config_path}, defaulting dtype to {DTYPE_FP32}")
+            self.warning(
+                f"Config file not found at {config_path}, defaulting dtype to {DTYPE_FP32}"
+            )
+
     @property
     def dtype(self):
         return self._dtype
