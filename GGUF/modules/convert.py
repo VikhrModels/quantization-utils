@@ -90,9 +90,6 @@ class Convert(LoggerMixin, ModelMixin):
 
     def download_model(self):
         model_dir = self.get_model_dir()
-        config_path = os.path.join(model_dir, "config.json")
-        if os.path.exists(config_path):
-            return
         ensure_dir_exists(model_dir)
         self.info(f"Downloading model {self.model_id}")
         snapshot_download(self.model_id, local_dir=model_dir, token=self.token)

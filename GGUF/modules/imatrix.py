@@ -116,7 +116,7 @@ class Imatrix(LoggerMixin, ModelMixin):
                     "-sm",
                     "row",
                     "--temp",
-                    "0.5",
+                    "0.25",
                 ],
                 "llama.cpp",
             )
