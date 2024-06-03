@@ -154,14 +154,21 @@ def run_command(logger: logging.Logger, command: List[str], cwd: str = "."):
 
         if process.poll() is not None:
             break
-        time.sleep(0.05)
+
+    wrapped_stdout.write(process.stdout.read())
+    wrapped_stderr.write(process.stderr.read())
 
     code = process.wait()
 
     if code != 0:
-        raise OSError(f"Command {command} failed with error code: {process.returncode}")
+        logger.exception(
+            f"Running command: '{' '.join(command)}' in {os.path.join(os.getcwd(), cwd)}: Error code: {code}",
+            exc_info=True,
+            stack_info=True,
+        )
+        sys.exit(127)
     else:
-        logger.info(f"Command {command} completed successfully")
+        logger.info(f"Command '{' '.join(command)}' completed successfully")
     return True
 
 

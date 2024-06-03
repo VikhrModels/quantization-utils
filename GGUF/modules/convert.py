@@ -16,7 +16,7 @@ from shared import (
     run_command,
 )
 
-CONVERT_CMD = "convert.py"
+CONVERT_CMD = "convert-hf-to-gguf.py"
 
 
 class Convert(LoggerMixin, ModelMixin):
