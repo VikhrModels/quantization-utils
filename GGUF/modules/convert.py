@@ -12,9 +12,10 @@ from shared import (
     ModelMixin,
     Quant,
     ensure_dir_exists,
-    get_llamacpp,
     run_command,
 )
+from modules.hf_model_helper import HFModelDownloader
+from modules.llama_cpp import get_llamacpp
 
 CONVERT_CMD = "convert-hf-to-gguf.py"
 
@@ -62,7 +63,7 @@ class Convert(LoggerMixin, ModelMixin):
             model_dir = self.get_model_dir()
             config_file = os.path.join(model_dir, "config.json")
 
-            self.download_model()
+            HFModelDownloader(self.model_id, self.token).download_model(self._cwd)
 
             with open(config_file, "r") as f:
                 config = json.load(f)

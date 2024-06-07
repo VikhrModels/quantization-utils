@@ -107,7 +107,6 @@ class Imatrix(LoggerMixin, ModelMixin):
                     "512",
                     "--chunks",
                     "1024",
-                    "--mlock",
                     "-fa",
                     "-cb",
                     "--temp",
