@@ -3,7 +3,7 @@ import platform
 import logging
 from shared import run_command, git_clone_if_not_exist, git_pull_and_check
 
-LLAMA_CPP_DIR = "path/to/llama.cpp"
+LLAMA_CPP_DIR = "llama.cpp"
 LLAMA_CPP_REPO = "https://github.com/ggerganov/llama.cpp"
 
 def get_llamacpp(logger: logging.Logger):
@@ -34,4 +34,4 @@ def build_llamacpp(logger, flags=[]):
     logger.info(f"Running make with flags: {flags}")
     make_args = ["make", f"-j{os.cpu_count()}", *flags]
     run_command(logger, make_args, LLAMA_CPP_DIR)
-    run_command(logger, ["chmod", "+x", "imatrix", "quantize"], LLAMA_CPP_DIR)
+    run_command(logger, ["chmod", "+x", "llama-imatrix", "llama-quantize"], LLAMA_CPP_DIR)

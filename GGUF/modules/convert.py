@@ -14,10 +14,11 @@ from shared import (
     ensure_dir_exists,
     run_command,
 )
+from modules.llama_cpp import LLAMA_CPP_DIR
 from modules.hf_model_helper import HFModelDownloader
 from modules.llama_cpp import get_llamacpp
 
-CONVERT_CMD = "convert-hf-to-gguf.py"
+CONVERT_CMD ="convert_hf_to_gguf.py"
 
 
 class Convert(LoggerMixin, ModelMixin):
@@ -84,7 +85,7 @@ class Convert(LoggerMixin, ModelMixin):
                         "--outfile",
                         self.get_converted_model_filepath(),
                     ],
-                    "llama.cpp",
+                    LLAMA_CPP_DIR,
                 )
         except Exception as e:
             self.exception(f"Error converting model: {e}")

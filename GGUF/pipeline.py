@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_id",
         type=str,
-        default="Vikhrmodels/it-5.2-fp16-cp",
+        default="Vikhrmodels/it-5.4-fp16-orpo-v2",
         help="Huggingface model ID",
         # required=True,
     )

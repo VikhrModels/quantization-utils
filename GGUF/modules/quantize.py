@@ -7,6 +7,8 @@ DTYPE_FP16 = "float16"
 DTYPE_FP32 = "float32"
 DTYPE_BF16 = "bfloat16"
 
+QUANTIZE_CMD = "./llama-quantize"
+
 
 class Quantize(LoggerMixin, ModelMixin):
     def __init__(self, model_id: str, *args, **kwargs):
@@ -38,7 +40,7 @@ class Quantize(LoggerMixin, ModelMixin):
                 run_command(
                     self.logger,
                     [
-                        "./quantize",
+                        QUANTIZE_CMD,
                         # Do not use imatrix for upper quants, may lead to lower quality
                         *(
                             imatrix_attrs
