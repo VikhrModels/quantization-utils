@@ -48,6 +48,21 @@ class Quant(Enum):
     BF16 = "BF16"
     F32 = "F32"
 
+class DType(Enum):
+    FP16 = "float16"
+    FP32 = "float32"
+    BF16 = "bfloat16"
+    
+    def to_quant(self) -> Quant:
+        if self.value == "float16":
+            return Quant.F16
+        elif self.value == "float32":
+            return Quant.F32
+        elif self.value == "bfloat16":
+            return Quant.BF16
+        else:
+            raise ValueError(f"Invalid dtype: {self}")
+
 
 class StreamWrapper:
     def __init__(self, stream):

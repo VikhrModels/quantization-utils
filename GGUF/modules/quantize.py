@@ -3,12 +3,8 @@ import os
 from git import List
 from shared import LoggerMixin, ModelMixin, Quant, run_command
 
-DTYPE_FP16 = "float16"
-DTYPE_FP32 = "float32"
-DTYPE_BF16 = "bfloat16"
 
 QUANTIZE_CMD = "./llama-quantize"
-
 
 class Quantize(LoggerMixin, ModelMixin):
     def __init__(self, model_id: str, *args, **kwargs):
@@ -18,13 +14,13 @@ class Quantize(LoggerMixin, ModelMixin):
         self,
         quants: List[Quant],
         quants_skip: List[Quant] = [],
-        dtype: str = DTYPE_FP32,
+        base_quant: Quant = Quant.F32,
         converted_model_filepath: str = None,
         imatrix_filepath: str = None,
         force: bool = False,
     ):
         # Prevent auto-skip for higher quants if they was explicitly requested
-        if dtype == DTYPE_FP16:
+        if base_quant == Quant.F16:
             for quant in [Quant.F16, Quant.BF16, Quant.F32]:
                 if quant not in quants and quant not in quants_skip:
                     quants_skip.append(quant)

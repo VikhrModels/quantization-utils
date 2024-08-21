@@ -3,6 +3,7 @@ import random
 import time
 
 from datasets import load_dataset
+from modules.llama_cpp import LLAMA_CPP_DIR, get_llamacpp
 from shared import LoggerMixin, ModelMixin, Quant, ensure_dir_exists, run_command
 from tqdm import tqdm
 from transformers import AutoTokenizer
@@ -52,6 +53,7 @@ class Imatrix(LoggerMixin, ModelMixin):
 
     def write_imatrix_dataset(self, slice, tokenizer):
         ensure_dir_exists(os.path.dirname(self.get_imatrix_dataset_filepath()))
+        is_gemma = "gemma" in self.model_id.lower()
         with open(self.get_imatrix_dataset_filepath(), "w") as f:
             for i, example in tqdm(enumerate(slice), total=len(slice)):
                 if not example["conversations"]:
@@ -65,6 +67,17 @@ class Imatrix(LoggerMixin, ModelMixin):
                     }
                     for conv in example["conversations"]
                 ]
+                if is_gemma:
+                    if len(messages) > 1:
+                        first, messages = messages[0], messages[1:]
+                        if first["role"] == "system":
+                            messages[0]["content"] = (
+                                first["content"] + "\n\n" + messages[0]["content"]
+                            )
+                        else:
+                            messages = [first, *messages]
+                    else:
+                        messages[0]["role"] = "user"
                 try:
                     chat = tokenizer.apply_chat_template(messages, tokenize=False)
                 except Exception as e:
@@ -85,16 +98,18 @@ class Imatrix(LoggerMixin, ModelMixin):
             f"Importance matrix dataset created: {self.get_imatrix_dataset_filepath()}"
         )
 
-    def calculate_imatrix(self):
+    def calculate_imatrix(self, base_quant: Quant):
         try:
             ensure_dir_exists(f"{self.get_model_dir()}-GGUF")
             self.logger.info(f"Calculating imatrix for model {self.model_id}")
+            if not os.path.exists(os.path.join(self.cwd, LLAMA_CPP_DIR)):
+                get_llamacpp(self.logger)
             run_command(
                 self.logger,
                 [
                     IMATRIX_CMD,
                     "-m",
-                    self.get_quantized_filepath(Quant.F16),
+                    self.get_quantized_filepath(quant=base_quant),
                     "-f",
                     self.get_imatrix_dataset_filepath(),
                     "-o",
@@ -112,7 +127,7 @@ class Imatrix(LoggerMixin, ModelMixin):
                     "--temp",
                     "0.25",
                 ],
-                "llama.cpp",
+                LLAMA_CPP_DIR,
             )
         except Exception as e:
             self.logger.error(f"Error calculating imatrix: {e}")

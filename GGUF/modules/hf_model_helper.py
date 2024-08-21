@@ -2,6 +2,7 @@ import os
 from huggingface_hub import snapshot_download
 from shared import ensure_dir_exists
 
+
 class HFModelDownloader:
     def __init__(self, model_id, token=None):
         self.model_id = model_id

@@ -17,7 +17,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--model_id",
         type=str,
-        default="Vikhrmodels/it-5.4-fp16-orpo-v2",
+        default="Vikhrmodels/Vikhr-Gemma-2B-instruct",
         help="Huggingface model ID",
         # required=True,
     )
@@ -140,13 +140,13 @@ if __name__ == "__main__":
         imatrix.get_imatrix_filepath()
     ):
         dirty = True
-        imatrix.calculate_imatrix()
+        imatrix.calculate_imatrix(base_quant=convert.dtype.to_quant())
 
     if quantize.quantize_model(
         args.quants,
         args.quants_skip,
         converted_model_filepath=convert.get_converted_model_filepath(),
-        dtype=convert.dtype,
+        base_quant=convert.dtype.to_quant(),
         imatrix_filepath=imatrix.get_imatrix_filepath(),
         force=args.force_model_quantization,
     ):
