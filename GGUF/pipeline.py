@@ -104,6 +104,13 @@ if __name__ == "__main__":
         default=False,
     )
 
+    parser.add_argument(
+        "--q4_0-variants",
+        type=List[str],
+        help="Add specific q4_0 variants as of Q4_0_4_4, Q4_0_4_8, Q4_0_8_8",
+        default=[],
+    )
+
     args = parser.parse_args()
 
     # Propagate force flags
@@ -149,6 +156,7 @@ if __name__ == "__main__":
         base_quant=convert.dtype.to_quant(),
         imatrix_filepath=imatrix.get_imatrix_filepath(),
         force=args.force_model_quantization,
+        q4_0_variants=args.q4_0_variants,
     ):
         dirty = True
 

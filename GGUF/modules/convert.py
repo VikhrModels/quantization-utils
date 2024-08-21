@@ -15,6 +15,7 @@ from modules.llama_cpp import get_llamacpp
 
 CONVERT_CMD = "convert_hf_to_gguf.py"
 
+
 class Convert(LoggerMixin, ModelMixin):
     _dtype = DType.FP32
 
@@ -33,7 +34,9 @@ class Convert(LoggerMixin, ModelMixin):
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
                 config = json.load(f)
-                self.dtype = DType.F16 if config.get("torch_dtype") == "float16" else DType.FP32
+                self.dtype = (
+                    DType.F16 if config.get("torch_dtype") == "float16" else DType.FP32
+                )
             self.dtype = DType.FP32
             self.warning(
                 f"Config file not found at {config_path}, defaulting dtype to {DType.FP32}"

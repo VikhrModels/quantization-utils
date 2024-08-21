@@ -48,11 +48,12 @@ class Quant(Enum):
     BF16 = "BF16"
     F32 = "F32"
 
+
 class DType(Enum):
     FP16 = "float16"
     FP32 = "float32"
     BF16 = "bfloat16"
-    
+
     def to_quant(self) -> Quant:
         if self.value == "float16":
             return Quant.F16
