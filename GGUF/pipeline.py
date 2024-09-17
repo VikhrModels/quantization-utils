@@ -6,11 +6,60 @@ from typing import List
 from modules.convert import Convert
 from modules.imatrix import Imatrix
 from modules.quantize import Quant, Quantize
+from modules.perplexity import run_perplexity
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s [%(levelname)s]: %(message)s"
 )
+
+
+def run_pipeline(args):
+    imatrix = Imatrix(model_id=args.model_id)
+    convert = Convert(model_id=args.model_id, token=args.hf_token)
+    quantize = Quantize(model_id=args.model_id)
+
+    dirty = False
+
+    if args.force_imatrix_dataset or not (
+        os.path.exists(imatrix.get_imatrix_dataset_filepath())
+        or os.path.exists(imatrix.get_imatrix_filepath())
+    ):
+        dirty = True
+        imatrix.prepare_imatrix_samples()
+
+    if args.force_model_convert or not os.path.exists(
+        convert.get_converted_model_filepath()
+    ):
+        dirty = True
+        convert.convert_model()
+
+    if args.force_imatrix_calculation or not os.path.exists(
+        imatrix.get_imatrix_filepath()
+    ):
+        dirty = True
+        imatrix.calculate_imatrix(base_quant=convert.dtype.to_quant())
+
+    if quantize.quantize_model(
+        args.quants,
+        args.quants_skip,
+        converted_model_filepath=convert.get_converted_model_filepath(),
+        base_quant=convert.dtype.to_quant(),
+        imatrix_filepath=imatrix.get_imatrix_filepath(),
+        force=args.force_model_quantization,
+        q4_0_variants=args.q4_0_variants,
+    ):
+        dirty = True
+
+    if args.ppl:
+        dirty = True
+        run_perplexity(args.model_id, args)
+
+    if dirty:
+        logging.info("Processing complete")
+    else:
+        logging.info("Nothing to do, consider using force flags")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the GGUF Pipeline")
@@ -29,6 +78,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--quants",
+        "-q",
         type=List[Quant],
         help="Quantization levels to run the pipeline on, default is every quantization level",
         default=[
@@ -69,12 +119,14 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--quants-skip",
+        "-qs",
         type=List[Quant],
         help="Quantization levels to skip for the pipeline",
         default=[],
     )
     parser.add_argument(
         "--force",
+        "-f",
         action="store_true",
         help="Force the whole pipeline to run",
         default=False,
@@ -111,6 +163,32 @@ if __name__ == "__main__":
         default=[],
     )
 
+    parser.add_argument(
+        "--perplexity",
+        "-ppl",
+        action="store_true",
+        help="Calculate perplexity of the model",
+        default=False,
+    )
+
+    parser.add_argument(
+        "--force-perplexity",
+        "-fppl",
+        action="store_true",
+        help="Force calculation of perplexity",
+        default=False,
+    )
+
+    parser.add_argument("--quiet", help="Suppress debug outputs", action="store_true")
+
+    parser.add_argument(
+        "--threads",
+        "-t",
+        type=int,
+        help="Number of threads to use",
+        default=os.cpu_count(),
+    )
+
     args = parser.parse_args()
 
     # Propagate force flags
@@ -123,44 +201,7 @@ if __name__ == "__main__":
         args.force_model_convert = True
     if args.force_imatrix_calculation:
         args.force_imatrix_dataset = True
+    if args.force_perplexity:
+        args.perplexity = True
 
-    imatrix = Imatrix(model_id=args.model_id)
-    convert = Convert(model_id=args.model_id, token=args.hf_token)
-    quantize = Quantize(model_id=args.model_id)
-
-    dirty = False
-
-    if args.force_imatrix_dataset or not (
-        os.path.exists(imatrix.get_imatrix_dataset_filepath())
-        or os.path.exists(imatrix.get_imatrix_filepath())
-    ):
-        dirty = True
-        imatrix.prepare_imatrix_samples()
-
-    if args.force_model_convert or not os.path.exists(
-        convert.get_converted_model_filepath()
-    ):
-        dirty = True
-        convert.convert_model()
-
-    if args.force_imatrix_calculation or not os.path.exists(
-        imatrix.get_imatrix_filepath()
-    ):
-        dirty = True
-        imatrix.calculate_imatrix(base_quant=convert.dtype.to_quant())
-
-    if quantize.quantize_model(
-        args.quants,
-        args.quants_skip,
-        converted_model_filepath=convert.get_converted_model_filepath(),
-        base_quant=convert.dtype.to_quant(),
-        imatrix_filepath=imatrix.get_imatrix_filepath(),
-        force=args.force_model_quantization,
-        q4_0_variants=args.q4_0_variants,
-    ):
-        dirty = True
-
-    if dirty:
-        logging.info("Processing complete")
-    else:
-        logging.info("Nothing to do, consider using force flags")
+    run_pipeline(args)

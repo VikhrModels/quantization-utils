@@ -20,17 +20,21 @@ class Imatrix(LoggerMixin, ModelMixin):
     def get_imatrix_dir(self):
         return os.path.join(self.cwd, "imatrix")
 
-    def get_imatrix_dataset_filepath(self):
-        return os.path.join(self.get_imatrix_dir(), f"{self.model_id}.imatrix.txt")
+    def get_imatrix_dataset_filepath(self, filename_template="imatrix.txt"):
+        return os.path.join(
+            self.get_imatrix_dir(), f"{self.model_id}.{filename_template}"
+        )
 
-    def get_imatrix_filepath(self):
-        return os.path.join(self.get_imatrix_dir(), f"{self.model_id}.imatrix.dat")
+    def get_imatrix_filepath(self, filename_template="imatrix.dat"):
+        return os.path.join(
+            self.get_imatrix_dir(), f"{self.model_id}.{filename_template}"
+        )
 
-    def prepare_imatrix_samples(self):
+    def prepare_imatrix_samples(self, qty=None, filepath=None):
         dataset = self.load_dataset()
-        slice = self.select_data_slice(dataset)
+        slice = self.select_data_slice(dataset, qty)
         tokenizer = self.load_tokenizer()
-        self.write_imatrix_dataset(slice, tokenizer)
+        self.write_imatrix_dataset(slice, tokenizer, filepath)
         self.append_calibration_data()
 
     def load_dataset(self):
@@ -38,23 +42,25 @@ class Imatrix(LoggerMixin, ModelMixin):
         self.logger.info(f"Loading dataset {dataset_id}")
         return load_dataset(dataset_id)
 
-    def select_data_slice(self, dataset):
-        offset = random.randint(0, len(dataset["train"]) - 10000)
+    def select_data_slice(self, dataset, qty=None):
+        qty = qty or 1000
+        offset = random.randint(0, len(dataset["train"]) - qty)
         self.logger.info(f"Selecting data slice with offset {offset}")
         return (
             dataset["train"]
             .shuffle(seed=int(time.time()))
-            .select(range(offset, offset + 10000))
+            .select(range(offset, offset + qty))
         )
 
     def load_tokenizer(self):
         self.logger.info(f"Loading tokenizer for model {self.model_id}")
         return AutoTokenizer.from_pretrained(self.model_id)
 
-    def write_imatrix_dataset(self, slice, tokenizer):
-        ensure_dir_exists(os.path.dirname(self.get_imatrix_dataset_filepath()))
-        is_gemma = "gemma" in self.model_id.lower()
-        with open(self.get_imatrix_dataset_filepath(), "w") as f:
+    def write_imatrix_dataset(self, slice, tokenizer, filepath=None):
+        filepath = filepath or self.get_imatrix_dataset_filepath()
+        ensure_dir_exists(os.path.dirname(filepath))
+        is_nonsystem = "gemma" in self.model_id.lower()
+        with open(filepath, "w") as f:
             for i, example in tqdm(enumerate(slice), total=len(slice)):
                 if not example["conversations"]:
                     continue
@@ -67,17 +73,19 @@ class Imatrix(LoggerMixin, ModelMixin):
                     }
                     for conv in example["conversations"]
                 ]
-                if is_gemma:
-                    if len(messages) > 1:
-                        first, messages = messages[0], messages[1:]
-                        if first["role"] == "system":
-                            messages[0]["content"] = (
-                                first["content"] + "\n\n" + messages[0]["content"]
-                            )
-                        else:
-                            messages = [first, *messages]
+                if not is_nonsystem:
+                    continue
+
+                if len(messages) > 1:
+                    first, messages = messages[0], messages[1:]
+                    if first["role"] == "system":
+                        messages[0]["content"] = (
+                            first["content"] + "\n\n" + messages[0]["content"]
+                        )
                     else:
-                        messages[0]["role"] = "user"
+                        messages = [first, *messages]
+                else:
+                    messages[0]["role"] = "user"
                 try:
                     chat = tokenizer.apply_chat_template(messages, tokenize=False)
                 except Exception as e:
@@ -123,7 +131,6 @@ class Imatrix(LoggerMixin, ModelMixin):
                     "--chunks",
                     "1024",
                     "-fa",
-                    "-cb",
                     "--temp",
                     "0.25",
                 ],

@@ -41,36 +41,36 @@ class Quantize(LoggerMixin, ModelMixin):
                         variants.append(q4_0_variant)
 
                 for variant in variants:
+                    command = [
+                        QUANTIZE_CMD,
+                        # Do not use imatrix for upper quants, may lead to lower quality
+                        *(
+                            imatrix_attrs
+                            if quant
+                            in {
+                                Quant.IQ1_M,
+                                Quant.IQ1_S,
+                                Quant.IQ2_XXS,
+                                Quant.IQ2_XS,
+                                Quant.IQ2_S,
+                                Quant.IQ2_M,
+                                Quant.IQ3_XXS,
+                                Quant.IQ3_XS,
+                                Quant.IQ3_S,
+                                Quant.IQ3_M,
+                                Quant.IQ4_NL,
+                                Quant.IQ4_XS,
+                            }
+                            else []
+                        ),
+                        converted_model_filepath,
+                        self.get_quantized_filepath(quant),
+                        variant,
+                    ]
+                    print(" ".join(command))
+
                     run_command(
                         self.logger,
-                        [
-                            QUANTIZE_CMD,
-                            # Do not use imatrix for upper quants, may lead to lower quality
-                            *(
-                                imatrix_attrs
-                                if quant
-                                not in {
-                                    Quant.Q4_0,
-                                    Quant.Q4_1,
-                                    Quant.Q4_K,
-                                    Quant.Q4_K_S,
-                                    Quant.Q4_K_M,
-                                    Quant.Q5_0,
-                                    Quant.Q5_1,
-                                    Quant.Q5_K,
-                                    Quant.Q5_K_S,
-                                    Quant.Q5_K_M,
-                                    Quant.Q6_K,
-                                    Quant.Q8_0,
-                                    Quant.F16,
-                                    Quant.BF16,
-                                    Quant.F32,
-                                }
-                                else []
-                            ),
-                            converted_model_filepath,
-                            self.get_quantized_filepath(quant),
-                            variant,
-                        ],
+                        command,
                         "llama.cpp",
                     )

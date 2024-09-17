@@ -4,7 +4,9 @@ import os
 import platform
 import subprocess
 import sys
+import select
 from enum import Enum
+import threading
 from typing import AnyStr, List
 
 import git
@@ -76,6 +78,10 @@ class StreamWrapper:
             self.stream.write(data.encode("utf-8"))
         else:
             self.stream.write(data)
+
+    def flush(self):
+        if hasattr(self.stream, "flush"):
+            self.stream.flush()
 
 
 class ModelMixin:
@@ -153,26 +159,50 @@ def run_command(logger: logging.Logger, command: List[str], cwd: str = "."):
         f"Running command: '{' '.join(command)}' in {os.path.join(os.getcwd(), cwd)}"
     )
     process = subprocess.Popen(
-        ["stdbuf", "-oL"] + command,
+        command,
         cwd=os.path.join(os.getcwd(), cwd),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
         text=True,
-        bufsize=0,
+        bufsize=1,
     )
 
-    wrapped_stdout = StreamWrapper(sys.__stdout__)
-    wrapped_stderr = StreamWrapper(sys.__stderr__)
+    output = []
     while True:
-        wrapped_stdout.write(process.stdout.read())
-        wrapped_stderr.write(process.stderr.read())
+        # Use select to check if stdout or stderr is ready to be read
+        reads = [process.stdout.fileno(), process.stderr.fileno()]
+        ret = select.select(reads, [], [], 0.1)
 
+        for fd in ret[0]:
+            if fd == process.stdout.fileno():
+                line = process.stdout.readline()
+                if line:
+                    logger.info(line.strip())
+                    output.append(line)
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+            if fd == process.stderr.fileno():
+                line = process.stderr.readline()
+                if line:
+                    logger.warning(line.strip())
+                    sys.stderr.write(line)
+                    sys.stderr.flush()
+
+        # Check if the process has finished
         if process.poll() is not None:
             break
 
-    wrapped_stdout.write(process.stdout.read())
-    wrapped_stderr.write(process.stderr.read())
+    # Read any remaining output
+    for line in process.stdout.readlines():
+        logger.info(line.strip())
+        output.append(line)
+        sys.stdout.write(line)
+        sys.stdout.flush()
+    for line in process.stderr.readlines():
+        logger.warning(line.strip())
+        sys.stderr.write(line)
+        sys.stderr.flush()
 
     code = process.wait()
 
@@ -185,7 +215,8 @@ def run_command(logger: logging.Logger, command: List[str], cwd: str = "."):
         sys.exit(127)
     else:
         logger.info(f"Command '{' '.join(command)}' completed successfully")
-    return True
+
+    return "".join(output)
 
 
 def get_llamacpp(logger: logging.Logger):

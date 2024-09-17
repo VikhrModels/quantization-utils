@@ -7,3 +7,4 @@ numba
 opencv-python
 sentencepiece
 git-python
+tabulate
