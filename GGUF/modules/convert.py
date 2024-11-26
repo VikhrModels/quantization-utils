@@ -35,7 +35,7 @@ class Convert(LoggerMixin, ModelMixin):
             with open(config_path, "r") as f:
                 config = json.load(f)
                 self.dtype = (
-                    DType.F16 if config.get("torch_dtype") == "float16" else DType.FP32
+                    DType.FP16 if config.get("torch_dtype") == "float16" else DType.FP32
                 )
             self.dtype = DType.FP32
             self.warning(
