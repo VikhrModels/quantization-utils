@@ -60,6 +60,7 @@ class Quantize(LoggerMixin, ModelMixin):
                                 Quant.IQ3_M,
                                 Quant.IQ4_NL,
                                 Quant.IQ4_XS,
+                                Quant.Q2_K_S,
                             }
                             else []
                         ),
