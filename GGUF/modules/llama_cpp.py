@@ -9,14 +9,15 @@ LLAMA_CPP_REPO = "https://github.com/ggerganov/llama.cpp"
 
 def get_llamacpp(logger: logging.Logger):
     current_os = platform.system()
-    make_args = ["LLAMA_BLAS=ON", "LLAMA_BLAS_VENDOR=OpenBLAS"]
+    # make_args = ["-DBUILD_SHARED_LIB=OFF", "-DGGML_BLAS=ON", "-DGGML_BLAS_VENDOR=OpenBLAS"]
+    make_args = []
 
     if current_os == "Darwin":
         logger.info("Using macOS")
-        make_args.append("LLAMA_METAL=on")
+        make_args.append("-DGGML_METAL=on")
     elif current_os == "Linux":
         logger.info("Using Linux")
-        make_args.append("LLAMA_CUDA=1")
+        make_args.append("-DGGML_CUDA=1")
     else:
         raise OSError(f"Unsupported operating system: {current_os}")
 
@@ -34,8 +35,10 @@ def get_llamacpp(logger: logging.Logger):
 
 def build_llamacpp(logger, flags=[]):
     logger.info(f"Running make with flags: {flags}")
-    make_args = ["make", f"-j{os.cpu_count()}", *flags]
+    make_args = ["cmake", "-B", "build", *flags]
+
     run_command(logger, make_args, LLAMA_CPP_DIR)
+    run_command(logger, ["cmake", "--build", "build", "--config", "Release"], LLAMA_CPP_DIR)
     run_command(
-        logger, ["chmod", "+x", "llama-imatrix", "llama-quantize"], LLAMA_CPP_DIR
+        logger, ["chmod", "+x", "build/bin/llama-imatrix", "build/bin/llama-quantize"], LLAMA_CPP_DIR
     )

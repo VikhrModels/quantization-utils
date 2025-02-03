@@ -4,7 +4,7 @@ from git import List
 from shared import LoggerMixin, ModelMixin, Quant, run_command
 
 
-QUANTIZE_CMD = "./llama-quantize"
+QUANTIZE_CMD = "./build/bin/llama-quantize"
 
 
 class Quantize(LoggerMixin, ModelMixin):

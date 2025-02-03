@@ -8,7 +8,7 @@ from shared import LoggerMixin, ModelMixin, Quant, ensure_dir_exists, run_comman
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-IMATRIX_CMD = "./llama-imatrix"
+IMATRIX_CMD = "./build/bin/llama-imatrix"
 STANDARD_CAL_DATA_DIR = os.path.join("resources", "standard_cal_data")
 
 
