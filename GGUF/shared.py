@@ -2,17 +2,67 @@ import io
 import logging
 import os
 import platform
+import select
+import shutil
 import subprocess
 import sys
-import select
 from enum import Enum
-import threading
 from typing import AnyStr, List
 
 import git
 
 LLAMA_CPP_DIR = "llama.cpp"
 LLAMA_CPP_REPO = "https://github.com/ggerganov/llama.cpp"
+
+
+def find_llama_binary(binary_name: str) -> str:
+    """
+    Find llama.cpp binary in PATH or fallback to local build.
+
+    Args:
+        binary_name: Name of the binary (e.g., 'llama-quantize', 'llama-imatrix')
+
+    Returns:
+        Full path to the binary
+
+    Raises:
+        FileNotFoundError: If binary is not found
+    """
+    # First, try to find in PATH (globally installed)
+    global_binary = shutil.which(binary_name)
+    if global_binary:
+        return global_binary
+
+    # Fallback to local build directory
+    local_binary = os.path.join(LLAMA_CPP_DIR, "build", "bin", binary_name)
+    if os.path.exists(local_binary) and os.access(local_binary, os.X_OK):
+        return local_binary
+
+    # If not found, raise an error with helpful message
+    raise FileNotFoundError(
+        f"llama.cpp binary '{binary_name}' not found. "
+        f"Please ensure llama.cpp is installed globally or run the build process."
+    )
+
+
+def get_quantize_command() -> str:
+    """Get the llama-quantize command path."""
+    return find_llama_binary("llama-quantize")
+
+
+def get_imatrix_command() -> str:
+    """Get the llama-imatrix command path."""
+    return find_llama_binary("llama-imatrix")
+
+
+def get_perplexity_command() -> str:
+    """Get the llama-perplexity command path."""
+    return find_llama_binary("llama-perplexity")
+
+
+def get_cli_command() -> str:
+    """Get the llama-cli command path."""
+    return find_llama_binary("llama-cli")
 
 
 class Quant(Enum):

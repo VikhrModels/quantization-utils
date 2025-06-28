@@ -1,12 +1,10 @@
 import argparse
 import logging
 import os
+import sys
 from typing import List
 
-from modules.convert import Convert
-from modules.imatrix import Imatrix
-from modules.quantize import Quant, Quantize
-from modules.perplexity import run_perplexity
+from modules.quantize import Quant
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 logging.basicConfig(
@@ -15,6 +13,11 @@ logging.basicConfig(
 
 
 def run_pipeline(args):
+    from modules.convert import Convert
+    from modules.imatrix import Imatrix
+    from modules.perplexity import run_perplexity
+    from modules.quantize import Quantize
+
     imatrix = Imatrix(model_id=args.model_id)
     convert = Convert(model_id=args.model_id, token=args.hf_token)
     quantize = Quantize(model_id=args.model_id)
@@ -188,6 +191,11 @@ if __name__ == "__main__":
         help="Number of threads to use",
         default=os.cpu_count(),
     )
+
+    # Check if no arguments were provided
+    if len(sys.argv) == 1:
+        parser.print_help()
+        sys.exit(0)
 
     args = parser.parse_args()
 

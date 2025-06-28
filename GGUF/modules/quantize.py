@@ -1,10 +1,7 @@
 import os
 
 from git import List
-from shared import LoggerMixin, ModelMixin, Quant, run_command
-
-
-QUANTIZE_CMD = "./build/bin/llama-quantize"
+from shared import LoggerMixin, ModelMixin, Quant, get_quantize_command, run_command
 
 
 class Quantize(LoggerMixin, ModelMixin):
@@ -21,6 +18,10 @@ class Quantize(LoggerMixin, ModelMixin):
         force: bool = False,
         q4_0_variants: List[str] = [],
     ):
+        # Get the quantize command (will find globally or fallback to local)
+        quantize_cmd = get_quantize_command()
+        self.info(f"Using quantize binary: {quantize_cmd}")
+
         # Prevent auto-skip for higher quants if they was explicitly requested
         if base_quant == Quant.F16:
             for quant in [Quant.F16, Quant.BF16, Quant.F32]:
@@ -42,7 +43,7 @@ class Quantize(LoggerMixin, ModelMixin):
 
                 for variant in variants:
                     command = [
-                        QUANTIZE_CMD,
+                        quantize_cmd,
                         # Do not use imatrix for upper quants, may lead to lower quality
                         *(
                             imatrix_attrs
@@ -73,5 +74,5 @@ class Quantize(LoggerMixin, ModelMixin):
                     run_command(
                         self.logger,
                         command,
-                        "llama.cpp",
+                        ".",
                     )

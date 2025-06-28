@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # CPU-only service
+  quantization-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cpu
+    container_name: quantization-utils-cpu
+    volumes:
+      - ./models:/app/GGUF/models
+      - ./output:/app/output
+      - ./.cache:/root/.cache
+      - ./GGUF:/app/GGUF
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - PYTHONUNBUFFERED=1
+    working_dir: /app/GGUF
+    tty: true
+    stdin_open: true
+    command: ["python3", "pipeline.py", "--help"]
+    profiles:
+      - cpu
+
+  # CUDA service for GPU acceleration
+  quantization-cuda:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: cuda
+    container_name: quantization-utils-cuda
+    volumes:
+      - ./models:/app/GGUF/models
+      - ./output:/app/output
+      - ./.cache:/root/.cache
+      - ./GGUF:/app/GGUF
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-0}
+      - PYTHONUNBUFFERED=1
+    working_dir: /app/GGUF
+    tty: true
+    stdin_open: true
+    command: ["python3", "pipeline.py", "--help"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - cuda
+
+  # Metal service for Apple Silicon (when running on macOS with Docker Desktop)
+  quantization-metal:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: metal
+    container_name: quantization-utils-metal
+    volumes:
+      - ./models:/app/GGUF/models
+      - ./output:/app/output
+      - ./.cache:/root/.cache
+      - ./GGUF:/app/GGUF
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+      - PYTHONUNBUFFERED=1
+    working_dir: /app/GGUF
+    tty: true
+    stdin_open: true
+    command: ["python3", "pipeline.py", "--help"]
+    profiles:
+      - metal
+
+volumes:
+  models:
+    driver: local
+  output:
+    driver: local
+  cache:
+    driver: local 

@@ -3,12 +3,17 @@ import random
 import time
 
 from datasets import load_dataset
-from modules.llama_cpp import LLAMA_CPP_DIR, get_llamacpp
-from shared import LoggerMixin, ModelMixin, Quant, ensure_dir_exists, run_command
+from shared import (
+    LoggerMixin,
+    ModelMixin,
+    Quant,
+    ensure_dir_exists,
+    get_imatrix_command,
+    run_command,
+)
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-IMATRIX_CMD = "./build/bin/llama-imatrix"
 STANDARD_CAL_DATA_DIR = os.path.join("resources", "standard_cal_data")
 
 
@@ -110,12 +115,14 @@ class Imatrix(LoggerMixin, ModelMixin):
         try:
             ensure_dir_exists(f"{self.get_model_dir()}-GGUF")
             self.logger.info(f"Calculating imatrix for model {self.model_id}")
-            if not os.path.exists(os.path.join(self.cwd, LLAMA_CPP_DIR)):
-                get_llamacpp(self.logger)
+
+            imatrix_cmd = get_imatrix_command()
+            self.logger.info(f"Using imatrix binary: {imatrix_cmd}")
+
             run_command(
                 self.logger,
                 [
-                    IMATRIX_CMD,
+                    imatrix_cmd,
                     "-m",
                     self.get_quantized_filepath(quant=base_quant),
                     "-f",
@@ -134,7 +141,7 @@ class Imatrix(LoggerMixin, ModelMixin):
                     "--temp",
                     "0.25",
                 ],
-                LLAMA_CPP_DIR,
+                ".",
             )
         except Exception as e:
             self.logger.error(f"Error calculating imatrix: {e}")

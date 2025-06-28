@@ -1,17 +1,19 @@
 import argparse
+import glob
+import json
 import logging
 import os
-import glob
 import re
-import subprocess
-import json
-from tabulate import tabulate
-import timeit
-from modules.imatrix import Imatrix
-import sys
-from typing import Optional, Tuple, Dict, List, Any, Generator, Union
-from io import TextIOWrapper
 import select
+import subprocess
+import sys
+import timeit
+from io import TextIOWrapper
+from typing import Any, Dict, Generator, List, Optional, Tuple, Union
+
+from modules.imatrix import Imatrix
+from shared import get_perplexity_command
+from tabulate import tabulate
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -152,7 +154,9 @@ def calculate_perplexity(
         logging.info(f"Skipping {model_name} - already calculated")
         return loaded_data["perplexity"][dataset_name][model_quant_id]
 
-    command = f"llama.cpp/llama-perplexity -ngl {args.ngl} -m {file} -f {dataset_path} -t {args.threads} -fa"
+    perplexity_cmd = get_perplexity_command()
+    command = f"{perplexity_cmd} -ngl {args.ngl} -m {file} -f {dataset_path} -t {args.threads} -fa"
+
     output = []
     execution_time = None
     for output_type, content in run_perplexity_command(command, args):

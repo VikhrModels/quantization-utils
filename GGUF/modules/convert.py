@@ -1,19 +1,61 @@
 import json
 import os
+import shutil
 
 from huggingface_hub import snapshot_download
+from modules.hf_model_helper import HFModelDownloader
 from shared import (
+    LLAMA_CPP_DIR,
+    DType,
     LoggerMixin,
     ModelMixin,
     ensure_dir_exists,
     run_command,
-    DType,
 )
-from modules.llama_cpp import LLAMA_CPP_DIR
-from modules.hf_model_helper import HFModelDownloader
-from modules.llama_cpp import get_llamacpp
 
-CONVERT_CMD = "convert_hf_to_gguf.py"
+
+def find_convert_script() -> str:
+    """
+    Find the convert_hf_to_gguf.py script in PATH or fallback to local copy.
+
+    Returns:
+        Full path to the conversion script
+
+    Raises:
+        FileNotFoundError: If script is not found
+    """
+    # Try to find globally installed script
+    global_script = shutil.which("convert_hf_to_gguf.py")
+    if global_script:
+        return global_script
+
+    # Check if it's in the same directory as llama.cpp binaries
+    try:
+        llama_cli = shutil.which("llama-cli")
+        if llama_cli:
+            # Get the directory of llama-cli and look for the script
+            llama_dir = os.path.dirname(llama_cli)
+            script_path = os.path.join(llama_dir, "convert_hf_to_gguf.py")
+            if os.path.exists(script_path):
+                return script_path
+
+            # Also check one directory up (common structure)
+            parent_dir = os.path.dirname(llama_dir)
+            script_path = os.path.join(parent_dir, "convert_hf_to_gguf.py")
+            if os.path.exists(script_path):
+                return script_path
+    except:
+        pass
+
+    # Fallback to local copy
+    local_script = os.path.join(LLAMA_CPP_DIR, "convert_hf_to_gguf.py")
+    if os.path.exists(local_script):
+        return local_script
+
+    raise FileNotFoundError(
+        "convert_hf_to_gguf.py script not found. "
+        "Please ensure llama.cpp is properly installed or build locally."
+    )
 
 
 class Convert(LoggerMixin, ModelMixin):
@@ -37,6 +79,7 @@ class Convert(LoggerMixin, ModelMixin):
                 self.dtype = (
                     DType.FP16 if config.get("torch_dtype") == "float16" else DType.FP32
                 )
+        else:
             self.dtype = DType.FP32
             self.warning(
                 f"Config file not found at {config_path}, defaulting dtype to {DType.FP32}"
@@ -67,21 +110,23 @@ class Convert(LoggerMixin, ModelMixin):
                 self.dtype = DType(config.get("torch_dtype", DType.FP32))
 
             if not os.path.exists(self.get_converted_model_filepath()):
-                get_llamacpp(self.logger)
+                convert_script = find_convert_script()
+                self.info(f"Using conversion script: {convert_script}")
+
                 ensure_dir_exists(f"{model_dir}-GGUF")
                 self.info(f"Converting model {self.model_id}")
                 run_command(
                     self.logger,
                     [
                         "python",
-                        CONVERT_CMD,
+                        convert_script,
                         model_dir,
                         "--outtype",
                         "f16" if self.dtype == DType.FP16 else "f32",
                         "--outfile",
                         self.get_converted_model_filepath(),
                     ],
-                    LLAMA_CPP_DIR,
+                    ".",
                 )
         except Exception as e:
             self.exception(f"Error converting model: {e}")
