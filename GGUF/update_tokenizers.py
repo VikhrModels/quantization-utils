@@ -42,15 +42,51 @@ def load_source_tokenizer(model_id: str):
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_id)
         logger.info("✅ Tokenizer loaded successfully")
+
+        # Log chat template info
+        if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
+            logger.info(
+                f"📝 Chat template found: {len(tokenizer.chat_template)} characters"
+            )
+        else:
+            logger.warning("⚠️  No chat template found in source tokenizer")
+
         return tokenizer
     except Exception as e:
         logger.error(f"❌ Error loading tokenizer: {e}")
         raise
 
 
-def update_gguf_tokenizer(gguf_file: Path, source_tokenizer) -> bool:
+def extract_chat_template(tokenizer) -> str:
+    """Extract chat template from tokenizer"""
+    if hasattr(tokenizer, "chat_template") and tokenizer.chat_template:
+        return tokenizer.chat_template
+
+    # Try to get from tokenizer_config if available
+    if hasattr(tokenizer, "tokenizer_config"):
+        config = tokenizer.tokenizer_config
+        if isinstance(config, dict) and "chat_template" in config:
+            return config["chat_template"]
+
+    # Try alternative attributes
+    for attr in ["default_chat_template", "_chat_template"]:
+        if hasattr(tokenizer, attr):
+            template = getattr(tokenizer, attr)
+            if template:
+                return template
+
+    return None
+
+
+def update_gguf_tokenizer(
+    gguf_file: Path, source_tokenizer, chat_template_only=False
+) -> bool:
     """Update tokenizer in GGUF file"""
-    logger.info(f"Updating tokenizer in file: {gguf_file.name}")
+    logger.info(
+        f"Updating {'chat template only' if chat_template_only else 'tokenizer'} in file: {gguf_file.name}"
+    )
+
+    temp_file = None  # Initialize temp_file variable
 
     try:
         # Create backup copy
@@ -68,92 +104,117 @@ def update_gguf_tokenizer(gguf_file: Path, source_tokenizer) -> bool:
         temp_file = gguf_file.with_suffix(".gguf.tmp")
         writer = gguf.GGUFWriter(temp_file, reader.header.arch)
 
-        # Copy all existing metadata except tokenizer
-        for key, value in reader.fields.items():
-            # Skip tokenizer-specific fields
-            if not any(
-                token_key in key
-                for token_key in [
-                    "tokenizer.ggml.tokens",
-                    "tokenizer.ggml.scores",
-                    "tokenizer.ggml.token_type",
-                    "tokenizer.ggml.merges",
-                    "tokenizer.ggml.bos_token_id",
-                    "tokenizer.ggml.eos_token_id",
-                    "tokenizer.ggml.unknown_token_id",
-                    "tokenizer.ggml.separator_token_id",
-                    "tokenizer.ggml.padding_token_id",
-                    "tokenizer.ggml.model",
-                ]
+        # Extract chat template from source
+        chat_template = extract_chat_template(source_tokenizer)
+        if not chat_template and chat_template_only:
+            logger.error("❌ No chat template found in source tokenizer, cannot update")
+            return False
+
+        if chat_template_only:
+            # Copy all existing metadata except chat template
+            for key, value in reader.fields.items():
+                if key != "tokenizer.chat_template":
+                    writer.add_field(key, value)
+
+            # Add new chat template
+            writer.add_string("tokenizer.chat_template", chat_template)
+            logger.info(f"✅ Updated chat template only ({len(chat_template)} chars)")
+        else:
+            # Full tokenizer update (existing code)
+            # Copy all existing metadata except tokenizer
+            for key, value in reader.fields.items():
+                # Skip tokenizer-specific fields including chat template
+                if not any(
+                    token_key in key
+                    for token_key in [
+                        "tokenizer.ggml.tokens",
+                        "tokenizer.ggml.scores",
+                        "tokenizer.ggml.token_type",
+                        "tokenizer.ggml.merges",
+                        "tokenizer.ggml.bos_token_id",
+                        "tokenizer.ggml.eos_token_id",
+                        "tokenizer.ggml.unknown_token_id",
+                        "tokenizer.ggml.separator_token_id",
+                        "tokenizer.ggml.padding_token_id",
+                        "tokenizer.ggml.model",
+                        "tokenizer.chat_template",  # Chat template field
+                    ]
+                ):
+                    writer.add_field(key, value)
+
+            # Add new tokenizer data
+            logger.info("Adding new tokenizer data...")
+
+            # Get token vocabulary
+            vocab = source_tokenizer.get_vocab()
+            tokens = [""] * len(vocab)
+            scores = [0.0] * len(vocab)
+            token_types = [1] * len(vocab)  # GGML_TOKEN_TYPE_NORMAL
+
+            for token, token_id in vocab.items():
+                if token_id < len(tokens):
+                    tokens[token_id] = token
+
+            # Add tokens
+            writer.add_array("tokenizer.ggml.tokens", tokens)
+            writer.add_array("tokenizer.ggml.scores", scores)
+            writer.add_array("tokenizer.ggml.token_type", token_types)
+
+            # Add special tokens
+            if (
+                hasattr(source_tokenizer, "bos_token_id")
+                and source_tokenizer.bos_token_id is not None
             ):
-                writer.add_field(key, value)
+                writer.add_uint32(
+                    "tokenizer.ggml.bos_token_id", source_tokenizer.bos_token_id
+                )
 
-        # Add new tokenizer data
-        logger.info("Adding new tokenizer data...")
+            if (
+                hasattr(source_tokenizer, "eos_token_id")
+                and source_tokenizer.eos_token_id is not None
+            ):
+                writer.add_uint32(
+                    "tokenizer.ggml.eos_token_id", source_tokenizer.eos_token_id
+                )
 
-        # Get token vocabulary
-        vocab = source_tokenizer.get_vocab()
-        tokens = [""] * len(vocab)
-        scores = [0.0] * len(vocab)
-        token_types = [1] * len(vocab)  # GGML_TOKEN_TYPE_NORMAL
+            if (
+                hasattr(source_tokenizer, "unk_token_id")
+                and source_tokenizer.unk_token_id is not None
+            ):
+                writer.add_uint32(
+                    "tokenizer.ggml.unknown_token_id", source_tokenizer.unk_token_id
+                )
 
-        for token, token_id in vocab.items():
-            if token_id < len(tokens):
-                tokens[token_id] = token
+            if (
+                hasattr(source_tokenizer, "pad_token_id")
+                and source_tokenizer.pad_token_id is not None
+            ):
+                writer.add_uint32(
+                    "tokenizer.ggml.padding_token_id", source_tokenizer.pad_token_id
+                )
 
-        # Add tokens
-        writer.add_array("tokenizer.ggml.tokens", tokens)
-        writer.add_array("tokenizer.ggml.scores", scores)
-        writer.add_array("tokenizer.ggml.token_type", token_types)
+            # Add merges if this is a BPE tokenizer
+            if hasattr(source_tokenizer, "get_merges") and callable(
+                source_tokenizer.get_merges
+            ):
+                try:
+                    merges = source_tokenizer.get_merges()
+                    if merges:
+                        writer.add_array("tokenizer.ggml.merges", list(merges))
+                        logger.info(f"Added {len(merges)} merges")
+                except Exception as e:
+                    logger.warning(f"Could not get merges: {e}")
 
-        # Add special tokens
-        if (
-            hasattr(source_tokenizer, "bos_token_id")
-            and source_tokenizer.bos_token_id is not None
-        ):
-            writer.add_uint32(
-                "tokenizer.ggml.bos_token_id", source_tokenizer.bos_token_id
-            )
+            # Add tokenizer model
+            tokenizer_type = source_tokenizer.__class__.__name__
+            writer.add_string("tokenizer.ggml.model", tokenizer_type)
 
-        if (
-            hasattr(source_tokenizer, "eos_token_id")
-            and source_tokenizer.eos_token_id is not None
-        ):
-            writer.add_uint32(
-                "tokenizer.ggml.eos_token_id", source_tokenizer.eos_token_id
-            )
-
-        if (
-            hasattr(source_tokenizer, "unk_token_id")
-            and source_tokenizer.unk_token_id is not None
-        ):
-            writer.add_uint32(
-                "tokenizer.ggml.unknown_token_id", source_tokenizer.unk_token_id
-            )
-
-        if (
-            hasattr(source_tokenizer, "pad_token_id")
-            and source_tokenizer.pad_token_id is not None
-        ):
-            writer.add_uint32(
-                "tokenizer.ggml.padding_token_id", source_tokenizer.pad_token_id
-            )
-
-        # Add merges if this is a BPE tokenizer
-        if hasattr(source_tokenizer, "get_merges") and callable(
-            source_tokenizer.get_merges
-        ):
-            try:
-                merges = source_tokenizer.get_merges()
-                if merges:
-                    writer.add_array("tokenizer.ggml.merges", list(merges))
-                    logger.info(f"Added {len(merges)} merges")
-            except Exception as e:
-                logger.warning(f"Could not get merges: {e}")
-
-        # Add tokenizer model
-        tokenizer_type = source_tokenizer.__class__.__name__
-        writer.add_string("tokenizer.ggml.model", tokenizer_type)
+            # Add chat template
+            if chat_template:
+                writer.add_string("tokenizer.chat_template", chat_template)
+                logger.info(f"✅ Added chat template ({len(chat_template)} chars)")
+            else:
+                logger.warning("⚠️  No chat template found to add")
 
         # Copy tensors from original file
         logger.info("Copying tensors...")
@@ -170,14 +231,16 @@ def update_gguf_tokenizer(gguf_file: Path, source_tokenizer) -> bool:
 
         # Replace original file
         os.replace(temp_file, gguf_file)
-        logger.info(f"✅ Tokenizer updated in {gguf_file.name}")
+        logger.info(
+            f"✅ {'Chat template' if chat_template_only else 'Tokenizer'} updated in {gguf_file.name}"
+        )
 
         return True
 
     except Exception as e:
         logger.error(f"❌ Error updating {gguf_file.name}: {e}")
         # Remove temporary file if it was created
-        if temp_file.exists():
+        if temp_file and temp_file.exists():
             temp_file.unlink()
         return False
 
@@ -188,8 +251,17 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Usage examples:
+  # Update full tokenizer (tokens + chat template)
   python update_tokenizers.py ./models Vikhrmodels/QVikhr-3-4B-Instruction
-  python update_tokenizers.py /path/to/gguf/files microsoft/DialoGPT-medium
+  
+  # Update only chat template (faster, preserves existing tokens)
+  python update_tokenizers.py ./models Vikhrmodels/QVikhr-3-4B-Instruction --chat-template-only
+  
+  # Preview what would be updated without making changes
+  python update_tokenizers.py ./models Vikhrmodels/QVikhr-3-4B-Instruction --dry-run
+  
+  # Recursive search in subdirectories
+  python update_tokenizers.py /path/to/gguf/files microsoft/DialoGPT-medium --recursive
         """,
     )
 
@@ -213,6 +285,12 @@ Usage examples:
         help="Show what would be done without making changes",
     )
 
+    parser.add_argument(
+        "--chat-template-only",
+        action="store_true",
+        help="Update only the chat template, leave other tokenizer data unchanged",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -227,7 +305,10 @@ Usage examples:
         source_tokenizer = load_source_tokenizer(args.source_model)
 
         if args.dry_run:
-            logger.info("🔍 PREVIEW MODE (--dry-run)")
+            mode_text = (
+                "chat template only" if args.chat_template_only else "full tokenizer"
+            )
+            logger.info(f"🔍 PREVIEW MODE (--dry-run) - {mode_text} update")
             logger.info(f"Would update {len(gguf_files)} files:")
             for gguf_file in gguf_files:
                 logger.info(f"  - {gguf_file}")
@@ -238,14 +319,17 @@ Usage examples:
         failed_count = 0
 
         for gguf_file in gguf_files:
-            if update_gguf_tokenizer(gguf_file, source_tokenizer):
+            if update_gguf_tokenizer(
+                gguf_file, source_tokenizer, args.chat_template_only
+            ):
                 success_count += 1
             else:
                 failed_count += 1
 
         # Final report
+        update_type = "chat template" if args.chat_template_only else "tokenizer"
         logger.info("=" * 50)
-        logger.info("📊 UPDATE SUMMARY:")
+        logger.info(f"📊 {update_type.upper()} UPDATE SUMMARY:")
         logger.info(f"✅ Successfully updated: {success_count} files")
         logger.info(f"❌ Errors: {failed_count} files")
         logger.info(f"📁 Total processed: {len(gguf_files)} files")
@@ -254,7 +338,7 @@ Usage examples:
             logger.warning("⚠️  There are errors! Check logs above")
             sys.exit(1)
         else:
-            logger.info("🎉 All tokenizers updated successfully!")
+            logger.info(f"🎉 All {update_type}s updated successfully!")
 
     except Exception as e:
         logger.error(f"💥 Critical error: {e}")
