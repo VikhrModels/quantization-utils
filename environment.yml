@@ -1,0 +1,45 @@
+name: quantization-utils
+channels:
+  - conda-forge
+  - pytorch
+  - nvidia
+  - defaults
+dependencies:
+  - python=3.11
+  - pip=24.*
+  - numpy
+  - scipy
+  - numba
+  - git
+  - cmake
+  - make
+  - jq
+  - unzip
+  - curl
+  - wget
+  - gcc_linux-64 # [linux]
+  - gxx_linux-64 # [linux]
+  - clang # [osx]
+  - clangxx # [osx]
+  - ninja
+  - pkg-config
+  - openblas
+  - libgomp # [linux]
+  - libomp # [osx]
+  - cudatoolkit-dev # [linux]
+  - pip:
+      - huggingface_hub
+      - datasets
+      - transformers
+      - torch
+      - torchvision
+      - torchaudio
+      - Pillow
+      - opencv-python
+      - sentencepiece
+      - GitPython
+      - tabulate
+      - tqdm
+      - accelerate
+      - safetensors
+      - psutil

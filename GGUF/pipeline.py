@@ -5,11 +5,19 @@ import sys
 from typing import List
 
 from modules.quantize import Quant
+from shared import validate_environment
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s [%(levelname)s]: %(message)s"
 )
+
+logger = logging.getLogger(__name__)
+if not validate_environment(logger):
+    logger.error(
+        "Environment validation failed. Please run 'python setup.py' to fix issues."
+    )
+    sys.exit(1)
 
 
 def run_pipeline(args):

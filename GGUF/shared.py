@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from enum import Enum
+from pathlib import Path
 from typing import AnyStr, List
 
 import git
@@ -17,7 +18,7 @@ LLAMA_CPP_REPO = "https://github.com/ggerganov/llama.cpp"
 
 def find_llama_binary(binary_name: str) -> str:
     """
-    Find llama.cpp binary in PATH or fallback to local build.
+    Find llama.cpp binary in PATH or local installations.
 
     Args:
         binary_name: Name of the binary (e.g., 'llama-quantize', 'llama-imatrix')
@@ -28,20 +29,33 @@ def find_llama_binary(binary_name: str) -> str:
     Raises:
         FileNotFoundError: If binary is not found
     """
-    # First, try to find in PATH (globally installed)
-    global_binary = shutil.which(binary_name)
-    if global_binary:
-        return global_binary
+    # Search order: PATH -> ~/.local/bin -> local build
+    search_paths = [
+        None,  # Use PATH
+        Path.home() / ".local" / "bin",
+        Path(LLAMA_CPP_DIR) / "build" / "bin",
+        Path(LLAMA_CPP_DIR),
+    ]
 
-    # Fallback to local build directory
-    local_binary = os.path.join(LLAMA_CPP_DIR, "build", "bin", binary_name)
-    if os.path.exists(local_binary) and os.access(local_binary, os.X_OK):
-        return local_binary
+    for path in search_paths:
+        if path is None:
+            # Check global PATH
+            global_binary = shutil.which(binary_name)
+            if global_binary:
+                return global_binary
+        else:
+            # Check specific directory
+            binary_path = path / binary_name
+            if binary_path.exists() and binary_path.is_file():
+                # Check if executable
+                if os.access(binary_path, os.X_OK):
+                    return str(binary_path)
 
-    # If not found, raise an error with helpful message
+    # If not found, provide helpful error message
     raise FileNotFoundError(
         f"llama.cpp binary '{binary_name}' not found. "
-        f"Please ensure llama.cpp is installed globally or run the build process."
+        f"Please run 'python setup.py' to install llama.cpp or ensure it's in your PATH. "
+        f"Searched in: PATH, ~/.local/bin, {LLAMA_CPP_DIR}/build/bin, {LLAMA_CPP_DIR}"
     )
 
 
@@ -201,10 +215,12 @@ class LoggerMixin:
 
 
 def ensure_dir_exists(dir_path: str):
-    os.makedirs(dir_path, exist_ok=True)
+    """Ensure directory exists, create if it doesn't"""
+    Path(dir_path).mkdir(parents=True, exist_ok=True)
 
 
 def run_command(logger: logging.Logger, command: List[str], cwd: str = "."):
+    """Run command with proper logging and error handling"""
     logger.debug(
         f"Running command: '{' '.join(command)}' in {os.path.join(os.getcwd(), cwd)}"
     )
@@ -269,43 +285,88 @@ def run_command(logger: logging.Logger, command: List[str], cwd: str = "."):
     return "".join(output)
 
 
+def detect_environment():
+    """Detect current environment and capabilities"""
+    info = {
+        "os": platform.system().lower(),
+        "arch": platform.machine().lower(),
+        "has_nvidia": False,
+        "has_metal": False,
+        "acceleration": "cpu",
+    }
+
+    # Detect NVIDIA
+    try:
+        result = subprocess.run(["nvidia-smi"], capture_output=True, text=True)
+        info["has_nvidia"] = result.returncode == 0
+    except FileNotFoundError:
+        pass
+
+    # Detect Metal (Apple Silicon)
+    if info["os"] == "darwin" and "arm" in info["arch"]:
+        info["has_metal"] = True
+
+    # Determine acceleration type
+    if info["has_nvidia"]:
+        info["acceleration"] = "cuda"
+    elif info["has_metal"]:
+        info["acceleration"] = "metal"
+
+    return info
+
+
+def validate_environment(logger: logging.Logger):
+    """Validate that the environment is properly set up"""
+    try:
+        # Check if llama.cpp binaries are available
+        binaries = ["llama-quantize", "llama-imatrix", "llama-perplexity"]
+        missing_binaries = []
+
+        for binary in binaries:
+            try:
+                find_llama_binary(binary)
+                logger.info(f"✅ Found {binary}")
+            except FileNotFoundError:
+                missing_binaries.append(binary)
+                logger.warning(f"❌ Missing {binary}")
+
+        if missing_binaries:
+            logger.error(
+                f"Missing required binaries: {missing_binaries}. "
+                f"Please run 'python setup.py' to install them."
+            )
+            return False
+
+        # Check environment info
+        env_info = detect_environment()
+        logger.info(f"🖥️  Environment: {env_info['os']} {env_info['arch']}")
+        logger.info(f"🚀 Acceleration: {env_info['acceleration']}")
+
+        return True
+
+    except Exception as e:
+        logger.error(f"Environment validation failed: {e}")
+        return False
+
+
+# Legacy functions for backward compatibility (deprecated)
 def get_llamacpp(logger: logging.Logger):
-    current_os = platform.system()
-    make_args = ["LLAMA_BLAS=ON", "LLAMA_BLAS_VENDOR=OpenBLAS"]
-
-    if current_os == "Darwin":  # macOS
-        logger.info("Using macOS")
-        make_args.append("LLAMA_METAL=on")
-    elif current_os == "Linux":
-        logger.info("Using Linux")
-        make_args.append("LLAMA_CUDA=1")
-    else:
-        raise OSError(f"Unsupported operating system: {current_os}")
-
-    llama_cpp_dir = LLAMA_CPP_DIR
-    logger.info(f"Checking and updating repository: {llama_cpp_dir}")
-    is_updated = (
-        git_clone_if_not_exist(logger, llama_cpp_dir, LLAMA_CPP_REPO)
-        or git_pull_and_check(logger, llama_cpp_dir)
-        or not os.path.exists(os.path.join(llama_cpp_dir, "imatrix"))
+    """Deprecated: Use setup.py instead"""
+    logger.warning(
+        "get_llamacpp() is deprecated. Please run 'python setup.py' instead."
     )
-
-    if is_updated:
-        build_llamacpp(logger, make_args)
+    return validate_environment(logger)
 
 
 def build_llamacpp(logger, flags: List[AnyStr] = []):
-    logger.info(f"Running make with flags: {flags}")
-    make_args = [
-        "make",
-        f"-j{os.cpu_count()}",
-        *flags,
-    ]
-    run_command(logger, make_args, LLAMA_CPP_DIR)
-    run_command(logger, ["chmod", "+x", "imatrix", "quantize"], LLAMA_CPP_DIR)
+    """Deprecated: Use setup.py instead"""
+    logger.warning(
+        "build_llamacpp() is deprecated. Please run 'python setup.py' instead."
+    )
 
 
 def git_pull_and_check(logger, repo_path) -> bool:
+    """Check if git repository has updates"""
     logger.info(f"Executing git pull for repository: {repo_path}")
     repo = git.Repo(repo_path)
     pull_info = repo.remotes.origin.pull()
@@ -318,6 +379,7 @@ def git_pull_and_check(logger, repo_path) -> bool:
 
 
 def git_clone_if_not_exist(logger, repo_path, repo_url):
+    """Clone repository if it doesn't exist"""
     if not os.path.exists(repo_path):
         logger.info(f"Repository {repo_path} does not exist, cloning from {repo_url}")
         git.Repo.clone_from(repo_url, repo_path)

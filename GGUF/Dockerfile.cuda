@@ -44,9 +44,19 @@ RUN set -e && \
     curl -L -o llama.cpp.zip "$DOWNLOAD_URL" && \
     unzip llama.cpp.zip && \
     rm llama.cpp.zip && \
-    find . -name "llama-*-bin-ubuntu-*" -type d | head -1 | xargs -I{} mv {} /opt/llama.cpp && \
-    chmod +x /opt/llama.cpp/bin/* && \
-    ln -sf /opt/llama.cpp/bin/* /usr/local/bin/ || \
+    CURRENT_DIR=$(pwd) && \
+    echo "Current directory: $CURRENT_DIR" && \
+    for dir in llama-*-bin-ubuntu-*; do \
+        if [ -d "$dir" ]; then \
+            EXTRACTED_DIR="$dir" && \
+            break; \
+        fi; \
+    done && \
+    echo "Extracted directory: $EXTRACTED_DIR" && \
+    chmod -R +x "$EXTRACTED_DIR"/bin/* 2>/dev/null || true && \
+    chmod -R +x "$EXTRACTED_DIR"/lib/*.so* 2>/dev/null || true && \
+    cp -r "$EXTRACTED_DIR"/lib/* /usr/local/lib/ 2>/dev/null || true && \
+    ldconfig || \
     echo "Pre-built binaries not available, will build from source when needed"
 
 # Add llama.cpp binaries to PATH
