@@ -205,13 +205,57 @@ def build_from_source_with_cuda():
             capture_output=True,
         )
 
-        # Check if CUDA is available
-        try:
-            subprocess.run(["nvcc", "--version"], check=True, capture_output=True)
-            cuda_available = True
-        except (FileNotFoundError, subprocess.CalledProcessError):
-            cuda_available = False
-            logger.warning("NVCC not found - building with CPU support only")
+        # Check if CUDA is available and determine the best CUDA to use
+        cuda_available = False
+        cuda_version = None
+        nvcc_path = None
+
+        # First try conda environment NVCC
+        conda_nvcc = Path(os.environ.get("CONDA_PREFIX", "")) / "bin" / "nvcc"
+        if conda_nvcc.exists():
+            try:
+                result = subprocess.run(
+                    [str(conda_nvcc), "--version"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                if "release 12." in result.stdout:  # CUDA 12.x supports compute_90
+                    cuda_available = True
+                    nvcc_path = str(conda_nvcc)
+                    cuda_version = "conda"
+                    logger.info(f"Using conda NVCC: {nvcc_path}")
+                else:
+                    logger.warning("Conda NVCC version is too old for H100 support")
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                pass
+
+        # If conda NVCC is unavailable or too old, try system NVCC
+        if not cuda_available:
+            system_paths = ["/usr/local/cuda/bin/nvcc", "/usr/bin/nvcc"]
+            for path in system_paths:
+                if Path(path).exists():
+                    try:
+                        result = subprocess.run(
+                            [path, "--version"],
+                            check=True,
+                            capture_output=True,
+                            text=True,
+                        )
+                        if (
+                            "release 12." in result.stdout
+                            or "release 11.8" in result.stdout
+                        ):  # 11.8+ supports most modern GPUs
+                            cuda_available = True
+                            nvcc_path = path
+                            cuda_version = "system"
+                            logger.info(f"Using system NVCC: {nvcc_path}")
+                            break
+                    except (FileNotFoundError, subprocess.CalledProcessError):
+                        continue
+
+        if not cuda_available:
+            logger.warning("No suitable NVCC found - building with CPU support only")
 
         # Create build directory
         cmake_build_dir = build_dir / "build"
@@ -226,12 +270,35 @@ def build_from_source_with_cuda():
         ]
 
         if cuda_available:
-            cmake_args.extend(["-DGGML_CUDA=ON", "-DCMAKE_CUDA_COMPILER=nvcc"])
-            logger.info("Configuring with CUDA support...")
+            cmake_args.extend(["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_COMPILER={nvcc_path}"])
+
+            # Set up CUDA environment for the build
+            build_env = os.environ.copy()
+            if cuda_version == "system":
+                # Use system CUDA paths
+                cuda_root = Path(nvcc_path).parent.parent
+                build_env["CUDA_HOME"] = str(cuda_root)
+                build_env["CUDA_ROOT"] = str(cuda_root)
+                build_env["PATH"] = f"{cuda_root}/bin:" + build_env.get("PATH", "")
+                build_env["LD_LIBRARY_PATH"] = (
+                    f"{cuda_root}/lib64:{cuda_root}/lib:"
+                    + build_env.get("LD_LIBRARY_PATH", "")
+                )
+            else:
+                # Use conda CUDA paths
+                conda_prefix = os.environ.get("CONDA_PREFIX", "")
+                build_env["CUDA_HOME"] = conda_prefix
+                build_env["CUDA_ROOT"] = conda_prefix
+                build_env["LD_LIBRARY_PATH"] = f"{conda_prefix}/lib:" + build_env.get(
+                    "LD_LIBRARY_PATH", ""
+                )
+
+            logger.info(f"Configuring with CUDA support using {cuda_version} NVCC...")
         else:
+            build_env = os.environ.copy()
             logger.info("Configuring with CPU support...")
 
-        subprocess.run(cmake_args, cwd=cmake_build_dir, check=True)
+        subprocess.run(cmake_args, cwd=cmake_build_dir, check=True, env=build_env)
 
         # Build
         logger.info("Building llama.cpp (this may take several minutes)...")
@@ -239,6 +306,7 @@ def build_from_source_with_cuda():
             ["cmake", "--build", ".", "--config", "Release", "-j"],
             cwd=cmake_build_dir,
             check=True,
+            env=build_env,
         )
 
         # Install binaries
@@ -338,6 +406,48 @@ def install_llama_cpp():
         logger.info("Successfully installed llama.cpp binaries")
 
     return success
+
+
+def setup_cuda_environment():
+    """Set up CUDA environment variables in the conda environment."""
+    logger.info("🔧 Setting up CUDA environment variables...")
+
+    conda_prefix = os.environ.get("CONDA_PREFIX", "")
+    if not conda_prefix:
+        logger.warning("CONDA_PREFIX not set - skipping environment variable setup")
+        return
+
+    # Check if conda has CUDA installed
+    conda_nvcc = Path(conda_prefix) / "bin" / "nvcc"
+    if conda_nvcc.exists():
+        try:
+            # Set conda CUDA environment variables
+            env_vars = {
+                "CUDA_HOME": conda_prefix,
+                "CUDA_ROOT": conda_prefix,
+                "LD_LIBRARY_PATH": f"{conda_prefix}/lib:${{LD_LIBRARY_PATH:-}}",
+            }
+
+            for var, value in env_vars.items():
+                try:
+                    subprocess.run(
+                        ["conda", "env", "config", "vars", "set", f"{var}={value}"],
+                        check=True,
+                        capture_output=True,
+                    )
+                    logger.info(f"Set {var}={value}")
+                except subprocess.CalledProcessError as e:
+                    logger.warning(f"Failed to set {var}: {e}")
+
+            logger.info("✅ CUDA environment variables configured")
+            logger.info(
+                "Please run: conda deactivate && conda activate quantization-utils"
+            )
+
+        except Exception as e:
+            logger.warning(f"Failed to configure CUDA environment variables: {e}")
+    else:
+        logger.info("Conda NVCC not found - using system CUDA if available")
 
 
 def setup_directories():
@@ -440,6 +550,10 @@ def main():
     logger.info(f"   NVIDIA GPU: {has_nvidia}")
     logger.info(f"   Metal: {has_metal_support}")
     logger.info(f"   Acceleration: {acceleration}")
+
+    # Setup CUDA environment if needed
+    if acceleration == "cuda":
+        setup_cuda_environment()
 
     # Install llama.cpp
     if args.force_rebuild or not validate_environment():

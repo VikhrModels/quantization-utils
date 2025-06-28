@@ -23,7 +23,8 @@ dependencies:
   - pkg-config
   - openblas
   - libgomp
-  - cudatoolkit-dev
+  - cuda-toolkit
+  - cuda-nvcc
   - pip:
       - huggingface_hub
       - datasets
