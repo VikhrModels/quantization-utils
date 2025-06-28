@@ -245,7 +245,7 @@ def build_from_source_with_cuda():
         logger.info("Installing binaries...")
         install_dir.mkdir(parents=True, exist_ok=True)
 
-        # Copy main binaries
+        # Copy main binaries - they are built in build/bin/ subdirectory
         binaries = [
             "llama-cli",
             "llama-server",
@@ -257,13 +257,23 @@ def build_from_source_with_cuda():
 
         installed_count = 0
         for binary in binaries:
-            src_path = cmake_build_dir / binary
-            if src_path.exists():
+            # Look in both build/ and build/bin/ directories
+            src_paths = [cmake_build_dir / binary, cmake_build_dir / "bin" / binary]
+
+            src_path = None
+            for path in src_paths:
+                if path.exists():
+                    src_path = path
+                    break
+
+            if src_path and src_path.exists():
                 dst_path = install_dir / binary
                 shutil.copy2(src_path, dst_path)
                 dst_path.chmod(0o755)
                 logger.info(f"Installed: {dst_path}")
                 installed_count += 1
+            else:
+                logger.warning(f"Binary not found: {binary}")
 
         if installed_count == 0:
             logger.error("No binaries were built successfully")
