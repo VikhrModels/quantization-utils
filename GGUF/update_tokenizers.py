@@ -134,60 +134,128 @@ def update_gguf_tokenizer(
             # Copy existing metadata and only update chat template
             if hasattr(reader, "fields") and reader.fields:
                 for key, field in reader.fields.items():
-                    if key == "tokenizer.chat_template":
-                        # Replace with new chat template
-                        writer.add_string(key, chat_template)
-                        logger.info("✅ Updated chat template")
-                    else:
-                        # Copy existing metadata
-                        try:
-                            # Check if field has data (handle arrays properly)
-                            has_data = False
-                            if hasattr(field, "data"):
-                                if field.data is None:
-                                    has_data = False
-                                elif hasattr(field.data, "__len__"):
-                                    # It's an array-like object
-                                    has_data = len(field.data) > 0
-                                else:
-                                    # It's a scalar
-                                    has_data = True
+                    try:
+                        logger.debug(f"Processing field: {key}")
 
-                            if has_data and hasattr(field, "types") and field.types:
-                                # Handle different field types
-                                field_type = (
-                                    field.types[0]
-                                    if isinstance(field.types, list)
-                                    else field.types
+                        if key == "tokenizer.chat_template":
+                            # Replace with new chat template
+                            writer.add_string(key, chat_template)
+                            logger.info("✅ Updated chat template")
+                        else:
+                            # Copy existing metadata with careful array handling
+                            if not hasattr(field, "data"):
+                                logger.debug(
+                                    f"Field {key} has no data attribute, skipping"
                                 )
-                                if field_type == gguf.GGUFValueType.STRING:
-                                    value = (
-                                        field.parts[field.data[0]]
-                                        if hasattr(field, "parts")
-                                        else str(field.data[0])
-                                    )
+                                continue
+
+                            # Safely check if data exists
+                            try:
+                                data_exists = field.data is not None
+                                if hasattr(field.data, "__len__") and not isinstance(
+                                    field.data, (str, bytes)
+                                ):
+                                    # It's an array-like object, check length safely
+                                    data_exists = len(field.data) > 0
+                            except Exception as e:
+                                logger.debug(
+                                    f"Could not check data for field {key}: {e}"
+                                )
+                                continue
+
+                            if not data_exists:
+                                logger.debug(f"Field {key} has no data, skipping")
+                                continue
+
+                            # Safely check types
+                            if not hasattr(field, "types"):
+                                logger.debug(
+                                    f"Field {key} has no types attribute, skipping"
+                                )
+                                continue
+
+                            try:
+                                field_types = field.types
+                                if hasattr(field_types, "__len__") and not isinstance(
+                                    field_types, (str, bytes)
+                                ):
+                                    if len(field_types) == 0:
+                                        logger.debug(
+                                            f"Field {key} has empty types, skipping"
+                                        )
+                                        continue
+                                    field_type = field_types[0]
+                                else:
+                                    field_type = field_types
+                            except Exception as e:
+                                logger.debug(
+                                    f"Could not access types for field {key}: {e}"
+                                )
+                                continue
+
+                            # Now safely handle the field based on its type
+                            logger.debug(f"Field {key} has type: {field_type}")
+
+                            if field_type == gguf.GGUFValueType.STRING:
+                                try:
+                                    if hasattr(field, "parts") and field.parts:
+                                        value = field.parts[field.data[0]]
+                                    else:
+                                        value = str(field.data[0])
                                     writer.add_string(key, value)
-                                elif field_type == gguf.GGUFValueType.UINT32:
-                                    writer.add_uint32(key, field.data[0])
-                                elif field_type == gguf.GGUFValueType.FLOAT32:
-                                    writer.add_float32(key, field.data[0])
-                                elif field_type == gguf.GGUFValueType.BOOL:
-                                    writer.add_bool(key, field.data[0])
-                                elif field_type == gguf.GGUFValueType.ARRAY:
-                                    # Handle arrays based on their content type
+                                except Exception as e:
+                                    logger.debug(
+                                        f"Error processing STRING field {key}: {e}"
+                                    )
+                                    continue
+
+                            elif field_type == gguf.GGUFValueType.UINT32:
+                                try:
+                                    writer.add_uint32(key, int(field.data[0]))
+                                except Exception as e:
+                                    logger.debug(
+                                        f"Error processing UINT32 field {key}: {e}"
+                                    )
+                                    continue
+
+                            elif field_type == gguf.GGUFValueType.FLOAT32:
+                                try:
+                                    writer.add_float32(key, float(field.data[0]))
+                                except Exception as e:
+                                    logger.debug(
+                                        f"Error processing FLOAT32 field {key}: {e}"
+                                    )
+                                    continue
+
+                            elif field_type == gguf.GGUFValueType.BOOL:
+                                try:
+                                    writer.add_bool(key, bool(field.data[0]))
+                                except Exception as e:
+                                    logger.debug(
+                                        f"Error processing BOOL field {key}: {e}"
+                                    )
+                                    continue
+
+                            elif field_type == gguf.GGUFValueType.ARRAY:
+                                try:
                                     if hasattr(field, "parts") and field.parts:
                                         writer.add_array(key, field.parts)
                                     else:
-                                        writer.add_array(key, field.data)
-                                else:
-                                    # Generic fallback
+                                        writer.add_array(key, list(field.data))
+                                except Exception as e:
                                     logger.debug(
-                                        f"Copying field {key} with unknown type {field_type}"
+                                        f"Error processing ARRAY field {key}: {e}"
                                     )
                                     continue
-                        except Exception as e:
-                            logger.warning(f"Could not copy field {key}: {e}")
-                            continue
+                            else:
+                                logger.debug(
+                                    f"Unknown field type {field_type} for field {key}, skipping"
+                                )
+                                continue
+
+                    except Exception as e:
+                        logger.warning(f"Could not copy field {key}: {e}")
+                        continue
         else:
             # Full tokenizer update - copy metadata and replace tokenizer data
             # Copy existing non-tokenizer metadata
