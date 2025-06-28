@@ -132,8 +132,25 @@ def update_gguf_tokenizer(
 
         if chat_template_only:
             # Copy existing metadata and only update chat template
-            if hasattr(reader, "fields") and reader.fields:
-                for key, field in reader.fields.items():
+            fields_exist = False
+            try:
+                fields_exist = hasattr(reader, "fields") and reader.fields is not None
+                if fields_exist and hasattr(reader.fields, "__len__"):
+                    fields_exist = len(reader.fields) > 0
+            except Exception as e:
+                logger.debug(f"Error checking fields existence: {e}")
+                fields_exist = False
+
+            if fields_exist:
+                try:
+                    fields_items = (
+                        reader.fields.items() if hasattr(reader.fields, "items") else []
+                    )
+                except Exception as e:
+                    logger.debug(f"Error getting fields items: {e}")
+                    fields_items = []
+
+                for key, field in fields_items:
                     try:
                         logger.debug(f"Processing field: {key}")
 
