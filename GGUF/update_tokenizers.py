@@ -141,39 +141,50 @@ def update_gguf_tokenizer(
                     else:
                         # Copy existing metadata
                         try:
-                            if hasattr(field, "data") and field.data is not None:
-                                if hasattr(field, "types") and field.types:
-                                    # Handle different field types
-                                    field_type = (
-                                        field.types[0]
-                                        if isinstance(field.types, list)
-                                        else field.types
+                            # Check if field has data (handle arrays properly)
+                            has_data = False
+                            if hasattr(field, "data"):
+                                if field.data is None:
+                                    has_data = False
+                                elif hasattr(field.data, "__len__"):
+                                    # It's an array-like object
+                                    has_data = len(field.data) > 0
+                                else:
+                                    # It's a scalar
+                                    has_data = True
+
+                            if has_data and hasattr(field, "types") and field.types:
+                                # Handle different field types
+                                field_type = (
+                                    field.types[0]
+                                    if isinstance(field.types, list)
+                                    else field.types
+                                )
+                                if field_type == gguf.GGUFValueType.STRING:
+                                    value = (
+                                        field.parts[field.data[0]]
+                                        if hasattr(field, "parts")
+                                        else str(field.data[0])
                                     )
-                                    if field_type == gguf.GGUFValueType.STRING:
-                                        value = (
-                                            field.parts[field.data[0]]
-                                            if hasattr(field, "parts")
-                                            else str(field.data[0])
-                                        )
-                                        writer.add_string(key, value)
-                                    elif field_type == gguf.GGUFValueType.UINT32:
-                                        writer.add_uint32(key, field.data[0])
-                                    elif field_type == gguf.GGUFValueType.FLOAT32:
-                                        writer.add_float32(key, field.data[0])
-                                    elif field_type == gguf.GGUFValueType.BOOL:
-                                        writer.add_bool(key, field.data[0])
-                                    elif field_type == gguf.GGUFValueType.ARRAY:
-                                        # Handle arrays based on their content type
-                                        if hasattr(field, "parts") and field.parts:
-                                            writer.add_array(key, field.parts)
-                                        else:
-                                            writer.add_array(key, field.data)
+                                    writer.add_string(key, value)
+                                elif field_type == gguf.GGUFValueType.UINT32:
+                                    writer.add_uint32(key, field.data[0])
+                                elif field_type == gguf.GGUFValueType.FLOAT32:
+                                    writer.add_float32(key, field.data[0])
+                                elif field_type == gguf.GGUFValueType.BOOL:
+                                    writer.add_bool(key, field.data[0])
+                                elif field_type == gguf.GGUFValueType.ARRAY:
+                                    # Handle arrays based on their content type
+                                    if hasattr(field, "parts") and field.parts:
+                                        writer.add_array(key, field.parts)
                                     else:
-                                        # Generic fallback
-                                        logger.debug(
-                                            f"Copying field {key} with unknown type {field_type}"
-                                        )
-                                        continue
+                                        writer.add_array(key, field.data)
+                                else:
+                                    # Generic fallback
+                                    logger.debug(
+                                        f"Copying field {key} with unknown type {field_type}"
+                                    )
+                                    continue
                         except Exception as e:
                             logger.warning(f"Could not copy field {key}: {e}")
                             continue
