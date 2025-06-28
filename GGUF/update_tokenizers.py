@@ -88,6 +88,7 @@ def update_gguf_tokenizer(
     temp_file = None  # Initialize temp_file variable
 
     try:
+        logger.debug("Step 1: Creating backup copy")
         # Create backup copy
         backup_file = gguf_file.with_suffix(".gguf.backup")
         if not backup_file.exists():
@@ -96,69 +97,132 @@ def update_gguf_tokenizer(
 
             shutil.copy2(gguf_file, backup_file)
 
+        logger.debug("Step 2: Reading GGUF file")
         # Read GGUF file
         reader = gguf.GGUFReader(gguf_file)
+        logger.debug(f"GGUF reader created: {type(reader)}")
 
+        logger.debug("Step 3: Extracting architecture")
         # Extract architecture from metadata
         architecture = None
-        if hasattr(reader, "fields") and reader.fields:
-            # Try to get architecture from metadata
-            for key, field in reader.fields.items():
-                if key == "general.architecture":
-                    architecture = (
-                        field.parts[field.data[0]]
-                        if hasattr(field, "parts") and hasattr(field, "data")
-                        else str(field.data[0])
-                        if hasattr(field, "data")
-                        else None
-                    )
-                    break
+        try:
+            logger.debug(f"Reader has fields attribute: {hasattr(reader, 'fields')}")
+            if hasattr(reader, "fields"):
+                logger.debug(f"Reader.fields type: {type(reader.fields)}")
+                logger.debug(f"Reader.fields is None: {reader.fields is None}")
 
-        # Fallback: try to determine architecture from filename or assume llama
+                # Check if reader.fields has items method
+                if hasattr(reader.fields, "items"):
+                    logger.debug("Reader.fields has items method")
+                    # Try to safely iterate
+                    try:
+                        for key, field in reader.fields.items():
+                            logger.debug(f"Checking field: {key}")
+                            if key == "general.architecture":
+                                logger.debug(
+                                    f"Found architecture field, type: {type(field)}"
+                                )
+                                if hasattr(field, "data") and field.data is not None:
+                                    logger.debug(f"Field data type: {type(field.data)}")
+                                    if (
+                                        hasattr(field.data, "__len__")
+                                        and len(field.data) > 0
+                                    ):
+                                        architecture = str(field.data[0])
+                                        logger.debug(
+                                            f"Extracted architecture: {architecture}"
+                                        )
+                                break
+                    except Exception as e:
+                        logger.debug(f"Error iterating reader.fields: {e}")
+                else:
+                    logger.debug("Reader.fields does not have items method")
+            else:
+                logger.debug("Reader does not have fields attribute")
+        except Exception as e:
+            logger.debug(f"Error extracting architecture: {e}")
+
         if not architecture:
-            logger.warning(
-                "Could not determine architecture from GGUF metadata, assuming 'llama'"
-            )
-            architecture = "llama"
+            architecture = "llama"  # Default fallback
+            logger.debug(f"Using fallback architecture: {architecture}")
 
-        logger.info(f"Detected architecture: {architecture}")
-
+        logger.debug("Step 4: Creating GGUF writer")
         # Create new GGUF writer
         temp_file = gguf_file.with_suffix(".gguf.tmp")
         writer = gguf.GGUFWriter(temp_file, architecture)
+        logger.debug(f"GGUF writer created with architecture: {architecture}")
 
+        logger.debug("Step 5: Extracting chat template")
         # Extract chat template from source tokenizer
         chat_template = extract_chat_template(source_tokenizer)
+        logger.debug(
+            f"Chat template extracted, length: {len(chat_template) if chat_template else 0}"
+        )
 
+        logger.debug("Step 6: Processing fields")
         if chat_template_only:
+            logger.debug("Entering chat_template_only mode")
             # Copy existing metadata and only update chat template
             fields_exist = False
             try:
-                fields_exist = hasattr(reader, "fields") and reader.fields is not None
-                if fields_exist and hasattr(reader.fields, "__len__"):
-                    fields_exist = len(reader.fields) > 0
+                logger.debug("Checking if reader has fields...")
+                fields_exist = hasattr(reader, "fields")
+                logger.debug(f"Reader has fields: {fields_exist}")
+
+                if fields_exist:
+                    logger.debug("Checking if fields is not None...")
+                    fields_exist = reader.fields is not None
+                    logger.debug(f"Fields is not None: {fields_exist}")
+
+                    if fields_exist and hasattr(reader.fields, "__len__"):
+                        logger.debug("Checking fields length...")
+                        fields_len = len(reader.fields)
+                        logger.debug(f"Fields length: {fields_len}")
+                        fields_exist = fields_len > 0
+
             except Exception as e:
-                logger.debug(f"Error checking fields existence: {e}")
+                logger.error(f"Error checking fields existence: {e}")
+                logger.error(f"Error type: {type(e)}")
+                import traceback
+
+                logger.error(f"Traceback: {traceback.format_exc()}")
                 fields_exist = False
 
+            logger.debug(f"Fields exist check result: {fields_exist}")
+
             if fields_exist:
+                logger.debug("Getting fields items...")
                 try:
-                    fields_items = (
-                        reader.fields.items() if hasattr(reader.fields, "items") else []
-                    )
+                    if hasattr(reader.fields, "items"):
+                        logger.debug("Using reader.fields.items()")
+                        fields_items = reader.fields.items()
+                    else:
+                        logger.debug(
+                            "reader.fields has no items method, using empty list"
+                        )
+                        fields_items = []
                 except Exception as e:
-                    logger.debug(f"Error getting fields items: {e}")
+                    logger.error(f"Error getting fields items: {e}")
+                    logger.error(f"Error type: {type(e)}")
+                    import traceback
+
+                    logger.error(f"Traceback: {traceback.format_exc()}")
                     fields_items = []
 
+                logger.debug("Starting field iteration...")
                 for key, field in fields_items:
                     try:
                         logger.debug(f"Processing field: {key}")
 
                         if key == "tokenizer.chat_template":
                             # Replace with new chat template
+                            logger.debug(
+                                "Found tokenizer.chat_template field - replacing"
+                            )
                             writer.add_string(key, chat_template)
                             logger.info("✅ Updated chat template")
                         else:
+                            logger.debug(f"Processing metadata field: {key}")
                             # Copy existing metadata with careful array handling
                             if not hasattr(field, "data"):
                                 logger.debug(
@@ -166,48 +230,123 @@ def update_gguf_tokenizer(
                                 )
                                 continue
 
+                            logger.debug(f"Field {key} has data attribute")
                             # Safely check if data exists
                             try:
-                                data_exists = field.data is not None
-                                if hasattr(field.data, "__len__") and not isinstance(
-                                    field.data, (str, bytes)
-                                ):
-                                    # It's an array-like object, check length safely
-                                    data_exists = len(field.data) > 0
-                            except Exception as e:
                                 logger.debug(
+                                    f"Checking if field.data is not None for {key}"
+                                )
+                                data_is_not_none = field.data is not None
+                                logger.debug(
+                                    f"Field {key} data is not None: {data_is_not_none}"
+                                )
+
+                                data_exists = data_is_not_none
+
+                                if data_is_not_none:
+                                    logger.debug(
+                                        f"Checking if field.data has __len__ for {key}"
+                                    )
+                                    has_len = hasattr(field.data, "__len__")
+                                    logger.debug(
+                                        f"Field {key} data has __len__: {has_len}"
+                                    )
+
+                                    if has_len:
+                                        logger.debug(
+                                            f"Checking if field.data is string or bytes for {key}"
+                                        )
+                                        is_str_or_bytes = isinstance(
+                                            field.data, (str, bytes)
+                                        )
+                                        logger.debug(
+                                            f"Field {key} data is str/bytes: {is_str_or_bytes}"
+                                        )
+
+                                        if not is_str_or_bytes:
+                                            logger.debug(
+                                                f"Checking length of field.data for {key}"
+                                            )
+                                            try:
+                                                data_len = len(field.data)
+                                                logger.debug(
+                                                    f"Field {key} data length: {data_len}"
+                                                )
+                                                data_exists = data_len > 0
+                                            except Exception as len_e:
+                                                logger.error(
+                                                    f"Error getting length for field {key}: {len_e}"
+                                                )
+                                                data_exists = True  # Assume it exists if we can't check length
+
+                            except Exception as e:
+                                logger.error(
                                     f"Could not check data for field {key}: {e}"
                                 )
+                                logger.error(f"Error type: {type(e)}")
+                                import traceback
+
+                                logger.error(f"Traceback: {traceback.format_exc()}")
                                 continue
 
+                            logger.debug(
+                                f"Field {key} data exists check result: {data_exists}"
+                            )
                             if not data_exists:
                                 logger.debug(f"Field {key} has no data, skipping")
                                 continue
 
                             # Safely check types
+                            logger.debug(f"Checking if field {key} has types attribute")
                             if not hasattr(field, "types"):
                                 logger.debug(
                                     f"Field {key} has no types attribute, skipping"
                                 )
                                 continue
 
+                            logger.debug(f"Field {key} has types attribute")
                             try:
+                                logger.debug(f"Getting field.types for {key}")
                                 field_types = field.types
+                                logger.debug(
+                                    f"Field {key} types: {field_types}, type: {type(field_types)}"
+                                )
+
                                 if hasattr(field_types, "__len__") and not isinstance(
                                     field_types, (str, bytes)
                                 ):
-                                    if len(field_types) == 0:
+                                    logger.debug(f"Field {key} types is array-like")
+                                    try:
+                                        types_len = len(field_types)
                                         logger.debug(
-                                            f"Field {key} has empty types, skipping"
+                                            f"Field {key} types length: {types_len}"
+                                        )
+                                        if types_len == 0:
+                                            logger.debug(
+                                                f"Field {key} has empty types, skipping"
+                                            )
+                                            continue
+                                        field_type = field_types[0]
+                                        logger.debug(
+                                            f"Field {key} first type: {field_type}"
+                                        )
+                                    except Exception as types_e:
+                                        logger.error(
+                                            f"Error processing types array for field {key}: {types_e}"
                                         )
                                         continue
-                                    field_type = field_types[0]
                                 else:
+                                    logger.debug(f"Field {key} types is scalar")
                                     field_type = field_types
+
                             except Exception as e:
-                                logger.debug(
+                                logger.error(
                                     f"Could not access types for field {key}: {e}"
                                 )
+                                logger.error(f"Error type: {type(e)}")
+                                import traceback
+
+                                logger.error(f"Traceback: {traceback.format_exc()}")
                                 continue
 
                             # Now safely handle the field based on its type
