@@ -439,10 +439,10 @@ def update_gguf_tokenizer(
             for tensor in reader.tensors:
                 try:
                     logger.debug(f"Copying tensor: {tensor.name}")
-                    # Updated API call without unsupported parameters
+                    # Updated API call with correct parameter name
                     writer.add_tensor_info(
                         name=tensor.name,
-                        tensor_type=tensor.tensor_type,
+                        tensor_dtype=tensor.tensor_type,
                     )
                 except Exception as tensor_e:
                     logger.debug(f"Error copying tensor {tensor.name}: {tensor_e}")
@@ -453,7 +453,7 @@ def update_gguf_tokenizer(
                         )
                         writer.add_tensor_info(
                             name=tensor.name,
-                            tensor_type=tensor.tensor_type,
+                            tensor_dtype=tensor.tensor_type,
                         )
                     except Exception as alt_e:
                         logger.error(f"Failed to copy tensor {tensor.name}: {alt_e}")
