@@ -48,7 +48,12 @@ chmod +x scripts/setup.sh
 ### Option 2: Manual Setup
 
 ```bash
-# Create conda environment
+# Create conda environment (OS-specific)
+# For Linux:
+conda env create -f environment-linux.yml
+# For macOS:
+conda env create -f environment-macos.yml
+# Generic (fallback):
 conda env create -f environment.yml
 
 # Activate environment
@@ -190,13 +195,19 @@ quantization-utils/
 | `llama-quantize: not found` | Run `python setup.py`                  |
 | `CUDA out of memory`        | Reduce batch size or use CPU           |
 | `Permission denied`         | Check file permissions with `chmod +x` |
+| `PackagesNotFoundError`     | Use OS-specific environment file       |
 
 ### Environment Problems
 
 ```bash
 # Reset environment
 conda env remove -n quantization-utils
-conda env create -f environment.yml
+
+# Recreate with OS-specific file
+# Linux:
+conda env create -f environment-linux.yml
+# macOS:
+conda env create -f environment-macos.yml
 
 # Reinstall llama.cpp
 rm -rf ~/.local/bin/llama-*

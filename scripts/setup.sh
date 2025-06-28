@@ -46,7 +46,21 @@ init_conda() {
 
 # Create conda environment
 create_environment() {
-    log_info "Creating conda environment from environment.yml..."
+    log_info "Creating conda environment from OS-specific environment file..."
+    
+    # Determine which environment file to use
+    local env_file="environment.yml"
+    if [[ "$(uname)" == "Linux" ]]; then
+        if [[ -f "environment-linux.yml" ]]; then
+            env_file="environment-linux.yml"
+            log_info "Using Linux-specific environment file"
+        fi
+    elif [[ "$(uname)" == "Darwin" ]]; then
+        if [[ -f "environment-macos.yml" ]]; then
+            env_file="environment-macos.yml"
+            log_info "Using macOS-specific environment file"
+        fi
+    fi
     
     if conda env list | grep -q "quantization-utils"; then
         log_warning "Environment 'quantization-utils' already exists."
@@ -60,7 +74,8 @@ create_environment() {
         fi
     fi
     
-    conda env create -f environment.yml
+    log_info "Using environment file: $env_file"
+    conda env create -f "$env_file"
     log_success "Conda environment created successfully!"
 }
 

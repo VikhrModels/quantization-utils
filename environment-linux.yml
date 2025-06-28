@@ -17,15 +17,13 @@ dependencies:
   - unzip
   - curl
   - wget
-  - gcc_linux-64 # [linux]
-  - gxx_linux-64 # [linux]
-  - clang # [osx]
-  - clangxx # [osx]
+  - gcc_linux-64
+  - gxx_linux-64
   - ninja
   - pkg-config
   - openblas
-  - libgomp # [linux]
-  - cudatoolkit-dev # [linux]
+  - libgomp
+  - cudatoolkit-dev
   - pip:
       - huggingface_hub
       - datasets

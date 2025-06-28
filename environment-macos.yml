@@ -2,7 +2,6 @@ name: quantization-utils
 channels:
   - conda-forge
   - pytorch
-  - nvidia
   - defaults
 dependencies:
   - python=3.11
@@ -17,15 +16,12 @@ dependencies:
   - unzip
   - curl
   - wget
-  - gcc_linux-64 # [linux]
-  - gxx_linux-64 # [linux]
-  - clang # [osx]
-  - clangxx # [osx]
+  - clang
+  - clangxx
   - ninja
   - pkg-config
   - openblas
-  - libgomp # [linux]
-  - cudatoolkit-dev # [linux]
+  - libomp
   - pip:
       - huggingface_hub
       - datasets
