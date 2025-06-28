@@ -226,7 +226,7 @@ def build_from_source_with_cuda():
         ]
 
         if cuda_available:
-            cmake_args.extend(["-DLLAMA_CUBLAS=ON", "-DCMAKE_CUDA_COMPILER=nvcc"])
+            cmake_args.extend(["-DGGML_CUDA=ON", "-DCMAKE_CUDA_COMPILER=nvcc"])
             logger.info("Configuring with CUDA support...")
         else:
             logger.info("Configuring with CPU support...")
