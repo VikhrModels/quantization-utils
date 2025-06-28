@@ -14,7 +14,7 @@ from shared import (
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-STANDARD_CAL_DATA_DIR = os.path.join("resources", "standard_cal_data")
+STANDARD_CAL_DATA_DIR = os.path.join(os.getcwd(), "resources", "standard_cal_data")
 
 
 class Imatrix(LoggerMixin, ModelMixin):
