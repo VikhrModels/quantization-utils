@@ -176,9 +176,12 @@ def download_and_extract_binary(url, install_dir):
     return True
 
 
-def build_from_source_with_cuda():
+def build_from_source_with_cuda(fast_build=False):
     """Build llama.cpp from source with CUDA support."""
-    logger.info("📦 Building llama.cpp from source with CUDA support...")
+    if fast_build:
+        logger.info("📦 Fast building llama.cpp from source with CUDA support...")
+    else:
+        logger.info("📦 Building llama.cpp from source with CUDA support...")
 
     build_dir = Path.home() / ".cache" / "quantization-utils" / "llama-build"
     install_dir = Path.home() / ".local" / "bin"
@@ -190,20 +193,22 @@ def build_from_source_with_cuda():
 
         build_dir.mkdir(parents=True, exist_ok=True)
 
-        # Clone llama.cpp
-        logger.info("Cloning llama.cpp repository...")
-        subprocess.run(
-            [
-                "git",
-                "clone",
-                "--depth",
-                "1",
-                "https://github.com/ggerganov/llama.cpp.git",
-                str(build_dir),
-            ],
-            check=True,
-            capture_output=True,
-        )
+        # Clone llama.cpp (shallow for fast build)
+        clone_args = [
+            "git",
+            "clone",
+            "https://github.com/ggerganov/llama.cpp.git",
+            str(build_dir),
+        ]
+
+        if fast_build:
+            clone_args.extend(["--depth", "1"])  # Shallow clone
+            logger.info("Shallow cloning llama.cpp repository...")
+        else:
+            clone_args.extend(["--depth", "1"])  # Always use shallow for speed
+            logger.info("Cloning llama.cpp repository...")
+
+        subprocess.run(clone_args, check=True, capture_output=True)
 
         # Check if CUDA is available and determine the best CUDA to use
         cuda_available = False
@@ -269,6 +274,17 @@ def build_from_source_with_cuda():
             f"-DCMAKE_INSTALL_PREFIX={install_dir}",
         ]
 
+        if fast_build:
+            # Fast build optimizations
+            cmake_args.extend(
+                [
+                    "-DLLAMA_BUILD_TESTS=OFF",  # Skip tests
+                    "-DLLAMA_BUILD_EXAMPLES=OFF",  # Skip examples
+                    "-DLLAMA_BUILD_SERVER=ON",  # Keep server
+                    "-DBUILD_SHARED_LIBS=OFF",  # Static linking (faster)
+                ]
+            )
+
         if cuda_available:
             cmake_args.extend(["-DGGML_CUDA=ON", f"-DCMAKE_CUDA_COMPILER={nvcc_path}"])
 
@@ -300,17 +316,26 @@ def build_from_source_with_cuda():
 
         subprocess.run(cmake_args, cwd=cmake_build_dir, check=True, env=build_env)
 
-        # Build
-        logger.info("Building llama.cpp (this may take several minutes)...")
-        subprocess.run(
-            ["cmake", "--build", ".", "--config", "Release", "-j"],
-            cwd=cmake_build_dir,
-            check=True,
-            env=build_env,
-        )
+        # Build with optimizations
+        build_cmd = ["cmake", "--build", ".", "--config", "Release"]
 
-        # Install binaries
-        logger.info("Installing binaries...")
+        if fast_build:
+            # Use more parallel jobs for faster build
+            import multiprocessing
+
+            cores = multiprocessing.cpu_count()
+            build_cmd.extend(
+                ["-j", str(min(cores, 8))]
+            )  # Cap at 8 to avoid memory issues
+            logger.info(f"Fast building llama.cpp using {min(cores, 8)} cores...")
+        else:
+            build_cmd.extend(["-j"])
+            logger.info("Building llama.cpp (this may take several minutes)...")
+
+        subprocess.run(build_cmd, cwd=cmake_build_dir, check=True, env=build_env)
+
+        # Install binaries and scripts
+        logger.info("Installing binaries and conversion scripts...")
         install_dir.mkdir(parents=True, exist_ok=True)
 
         # Copy main binaries - they are built in build/bin/ subdirectory
@@ -343,32 +368,184 @@ def build_from_source_with_cuda():
             else:
                 logger.warning(f"Binary not found: {binary}")
 
+        # Copy Python conversion scripts
+        conversion_scripts = [
+            "convert_hf_to_gguf.py",
+            "convert_legacy_llama.py",
+            "convert.py",
+        ]
+
+        scripts_installed = 0
+        for script in conversion_scripts:
+            src_path = build_dir / script
+            if src_path.exists():
+                dst_path = install_dir / src_path.name
+                shutil.copy2(src_path, dst_path)
+                dst_path.chmod(0o755)
+                logger.info(f"Installed: {dst_path}")
+                scripts_installed += 1
+
+        # Copy gguf-py module if it exists
+        gguf_src = build_dir / "gguf-py"
+        if gguf_src.exists():
+            gguf_dst = install_dir / "gguf-py"
+            if gguf_dst.exists():
+                shutil.rmtree(gguf_dst)
+            shutil.copytree(gguf_src, gguf_dst)
+            logger.info(f"Installed: {gguf_dst}")
+            scripts_installed += 1
+
+            # Add gguf-py to Python path by creating a .pth file
+            try:
+                import site
+
+                site_packages = site.getsitepackages()
+                if site_packages:
+                    pth_file = Path(site_packages[0]) / "gguf_local.pth"
+                    with open(pth_file, "w") as f:
+                        f.write(str(gguf_dst))
+                    logger.info(f"Added {gguf_dst} to Python path via {pth_file}")
+            except Exception as e:
+                logger.warning(f"Could not add gguf-py to Python path: {e}")
+
+        # Also check for examples directory with conversion scripts
+        examples_dir = build_dir / "examples"
+        if examples_dir.exists():
+            for script_file in examples_dir.glob("convert*.py"):
+                dst_path = install_dir / script_file.name
+                shutil.copy2(script_file, dst_path)
+                dst_path.chmod(0o755)
+                logger.info(f"Installed: {dst_path}")
+                scripts_installed += 1
+
         if installed_count == 0:
             logger.error("No binaries were built successfully")
             return False
 
         logger.info(
-            f"Successfully built and installed {installed_count} binaries with {'CUDA' if cuda_available else 'CPU'} support"
+            f"Successfully built and installed {installed_count} binaries and {scripts_installed} scripts with {'CUDA' if cuda_available else 'CPU'} support"
         )
+
+        # Clean up build directory after successful installation
+        if build_dir.exists():
+            try:
+                shutil.rmtree(build_dir)
+                logger.info("Cleaned up build directory")
+            except Exception as e:
+                logger.warning(f"Failed to clean up build directory: {e}")
+
         return True
 
     except subprocess.CalledProcessError as e:
         logger.error(f"Build failed: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error during build: {e}")
-        return False
-    finally:
-        # Clean up build directory
+        # Clean up on failure
         if build_dir.exists():
             try:
                 shutil.rmtree(build_dir)
-            except Exception as e:
-                logger.warning(f"Failed to clean up build directory: {e}")
+            except Exception:
+                pass
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error during build: {e}")
+        # Clean up on failure
+        if build_dir.exists():
+            try:
+                shutil.rmtree(build_dir)
+            except Exception:
+                pass
+        return False
 
 
-def install_llama_cpp():
-    """Install llama.cpp binaries."""
+def install_scripts_only():
+    """Install only the conversion scripts without rebuilding binaries."""
+    logger.info("📄 Installing conversion scripts only...")
+
+    build_dir = Path.home() / ".cache" / "quantization-utils" / "llama-scripts"
+    install_dir = Path.home() / ".local" / "bin"
+
+    try:
+        # Clean previous download
+        if build_dir.exists():
+            shutil.rmtree(build_dir)
+        build_dir.mkdir(parents=True, exist_ok=True)
+
+        # Shallow clone just for scripts
+        logger.info("Downloading conversion scripts...")
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "--depth",
+                "1",
+                "https://github.com/ggerganov/llama.cpp.git",
+                str(build_dir),
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+        # Copy conversion scripts
+        conversion_scripts = [
+            "convert_hf_to_gguf.py",
+            "convert_legacy_llama.py",
+            "convert.py",
+        ]
+
+        scripts_installed = 0
+        install_dir.mkdir(parents=True, exist_ok=True)
+
+        for script in conversion_scripts:
+            src_path = build_dir / script
+            if src_path.exists():
+                dst_path = install_dir / src_path.name
+                shutil.copy2(src_path, dst_path)
+                dst_path.chmod(0o755)
+                logger.info(f"Installed: {dst_path}")
+                scripts_installed += 1
+
+        # Copy gguf-py module
+        gguf_src = build_dir / "gguf-py"
+        if gguf_src.exists():
+            gguf_dst = install_dir / "gguf-py"
+            if gguf_dst.exists():
+                shutil.rmtree(gguf_dst)
+            shutil.copytree(gguf_src, gguf_dst)
+            logger.info(f"Installed: {gguf_dst}")
+            scripts_installed += 1
+
+        # Also check examples directory
+        examples_dir = build_dir / "examples"
+        if examples_dir.exists():
+            for script_file in examples_dir.glob("convert*.py"):
+                dst_path = install_dir / script_file.name
+                shutil.copy2(script_file, dst_path)
+                dst_path.chmod(0o755)
+                logger.info(f"Installed: {dst_path}")
+                scripts_installed += 1
+
+        # Clean up
+        if build_dir.exists():
+            shutil.rmtree(build_dir)
+
+        logger.info(f"✅ Installed {scripts_installed} conversion scripts")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to install scripts: {e}")
+        if build_dir.exists():
+            try:
+                shutil.rmtree(build_dir)
+            except Exception:
+                pass
+        return False
+
+
+def install_llama_cpp(fast_build=False, scripts_only=False):
+    """Install llama.cpp binaries and/or scripts."""
+    if scripts_only:
+        logger.info("📄 Installing conversion scripts only...")
+        return install_scripts_only()
+
     system, arch = detect_os()
     acceleration = get_acceleration_type()
 
@@ -379,7 +556,7 @@ def install_llama_cpp():
         logger.info(
             "🔧 CUDA detected on Linux - building from source (pre-built CUDA binaries not available)"
         )
-        return build_from_source_with_cuda()
+        return build_from_source_with_cuda(fast_build=fast_build)
 
     # Try to download pre-built binaries
     tag, assets = get_latest_release_info()
@@ -392,7 +569,7 @@ def install_llama_cpp():
         if system == "linux" and acceleration == "cpu":
             # Try building from source as fallback
             logger.warning("No suitable pre-built binary found - building from source")
-            return build_from_source_with_cuda()
+            return build_from_source_with_cuda(fast_build=fast_build)
         else:
             logger.error(
                 f"No suitable binary found for {system}-{arch} with {acceleration} acceleration"
@@ -404,6 +581,9 @@ def install_llama_cpp():
     success = download_and_extract_binary(binary_url, install_dir)
     if success:
         logger.info("Successfully installed llama.cpp binaries")
+        # Also install scripts after downloading binaries
+        if not install_scripts_only():
+            logger.warning("Failed to install conversion scripts")
 
     return success
 
@@ -529,6 +709,16 @@ def main():
         action="store_true",
         help="Force rebuild from source even if binaries exist",
     )
+    parser.add_argument(
+        "--fast-build",
+        action="store_true",
+        help="Force fast build from source even if binaries exist",
+    )
+    parser.add_argument(
+        "--scripts-only",
+        action="store_true",
+        help="Only install conversion scripts without rebuilding binaries",
+    )
     args = parser.parse_args()
 
     logger.info("🚀 Starting Quantization Utils Setup")
@@ -556,15 +746,20 @@ def main():
         setup_cuda_environment()
 
     # Install llama.cpp
-    if args.force_rebuild or not validate_environment():
-        if not install_llama_cpp():
+    force_install = args.force_rebuild or args.fast_build or args.scripts_only
+
+    if force_install or not validate_environment():
+        if not install_llama_cpp(
+            fast_build=args.fast_build, scripts_only=args.scripts_only
+        ):
             logger.error("Failed to install llama.cpp")
             sys.exit(1)
     else:
         logger.info("✅ llama.cpp binaries already installed and working")
 
-    # Setup directories
-    setup_directories()
+    # Setup directories (skip if only installing scripts)
+    if not args.scripts_only:
+        setup_directories()
 
     # Add installation note
     install_dir = Path.home() / ".local" / "bin"
@@ -574,9 +769,12 @@ def main():
         )
 
     logger.info("✅ Setup completed successfully!")
-    logger.info(
-        "📖 Run 'python setup.py --help' or check README.md for usage instructions"
-    )
+    if args.scripts_only:
+        logger.info("📄 Conversion scripts are now available")
+    else:
+        logger.info(
+            "📖 Run 'python setup.py --help' or check README.md for usage instructions"
+        )
 
 
 if __name__ == "__main__":

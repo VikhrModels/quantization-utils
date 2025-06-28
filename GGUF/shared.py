@@ -16,6 +16,53 @@ LLAMA_CPP_DIR = "llama.cpp"
 LLAMA_CPP_REPO = "https://github.com/ggerganov/llama.cpp"
 
 
+def find_conversion_script(script_name: str = "convert_hf_to_gguf.py") -> str:
+    """
+    Find conversion scripts in the system.
+
+    Args:
+        script_name: Name of the conversion script to find
+
+    Returns:
+        Full path to the script
+
+    Raises:
+        FileNotFoundError: If script is not found
+    """
+    # Try to find globally installed script
+    global_script = shutil.which(script_name)
+    if global_script:
+        return global_script
+
+    # Check if it's in the same directory as llama.cpp binaries
+    try:
+        llama_cli = find_llama_binary("llama-cli")
+        llama_dir = os.path.dirname(llama_cli)
+        script_path = os.path.join(llama_dir, script_name)
+        if os.path.exists(script_path):
+            return script_path
+    except FileNotFoundError:
+        pass
+
+    # Check common installation paths
+    common_paths = [
+        os.path.expanduser("~/.local/bin"),
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+        LLAMA_CPP_DIR,
+    ]
+
+    for path in common_paths:
+        script_path = os.path.join(path, script_name)
+        if os.path.exists(script_path):
+            return script_path
+
+    raise FileNotFoundError(
+        f"{script_name} script not found. "
+        f"Please ensure llama.cpp is properly installed or run 'python setup.py --force-rebuild'."
+    )
+
+
 def find_llama_binary(binary_name: str) -> str:
     """
     Find llama.cpp binary in PATH or local installations.
