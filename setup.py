@@ -272,6 +272,7 @@ def build_from_source_with_cuda(fast_build=False):
             "..",
             "-DCMAKE_BUILD_TYPE=Release",
             f"-DCMAKE_INSTALL_PREFIX={install_dir}",
+            "-DBUILD_SHARED_LIBS=OFF",  # Always use static linking for reliable binaries
         ]
 
         if fast_build:
@@ -281,7 +282,15 @@ def build_from_source_with_cuda(fast_build=False):
                     "-DLLAMA_BUILD_TESTS=OFF",  # Skip tests
                     "-DLLAMA_BUILD_EXAMPLES=OFF",  # Skip examples
                     "-DLLAMA_BUILD_SERVER=ON",  # Keep server
-                    "-DBUILD_SHARED_LIBS=OFF",  # Static linking (faster)
+                ]
+            )
+        else:
+            # Full build includes more binaries
+            cmake_args.extend(
+                [
+                    "-DLLAMA_BUILD_TESTS=OFF",  # Still skip tests for speed
+                    "-DLLAMA_BUILD_EXAMPLES=ON",  # Include examples for full build
+                    "-DLLAMA_BUILD_SERVER=ON",  # Keep server
                 ]
             )
 
