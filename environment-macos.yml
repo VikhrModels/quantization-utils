@@ -21,7 +21,7 @@ dependencies:
   - ninja
   - pkg-config
   - openblas
-  - libomp
+  - llvm-openmp
   - pip:
       - huggingface_hub
       - datasets
