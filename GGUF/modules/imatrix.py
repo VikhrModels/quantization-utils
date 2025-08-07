@@ -14,13 +14,14 @@ from shared import (
 from tqdm import tqdm
 from transformers import AutoTokenizer
 
-STANDARD_CAL_DATA_DIR = os.path.join(os.getcwd(), "resources", "standard_cal_data")
+GGUF_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+STANDARD_CAL_DATA_DIR = os.path.join(GGUF_DIR, "resources", "standard_cal_data")
 
 
 class Imatrix(LoggerMixin, ModelMixin):
     def __init__(self, model_id: str, *args, **kwargs):
         super().__init__(model_id=model_id, *args, **kwargs)
-        self.imatrix_dir = os.path.join(os.getcwd(), "imatrix")
+        self.imatrix_dir = os.path.join(self.cwd, "imatrix")
 
     def get_imatrix_dir(self):
         return os.path.join(self.cwd, "imatrix")
