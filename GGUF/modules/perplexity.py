@@ -5,10 +5,10 @@ import logging
 import os
 import re
 import select
+import shlex
 import subprocess
 import sys
 import timeit
-import shlex
 from io import TextIOWrapper
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
@@ -174,7 +174,7 @@ def calculate_perplexity(
         if ngl_value is None:
             ngl_value = 999
         command_parts.extend(["-ngl", str(ngl_value)])
-        command_parts.append("-fa")
+        command_parts.extend(["--flash-attn", "on"])
 
     command = " ".join(shlex.quote(part) for part in command_parts)
 

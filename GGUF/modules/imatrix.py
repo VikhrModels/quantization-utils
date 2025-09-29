@@ -143,7 +143,7 @@ class Imatrix(LoggerMixin, ModelMixin):
             ]
 
             if not is_cpu:
-                tail_args.append("-fa")
+                tail_args.extend(["--flash-attn", "on"])
 
             tail_args.extend(["--temp", "0.25"])
             command.extend(tail_args)
