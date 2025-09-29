@@ -199,6 +199,12 @@ if __name__ == "__main__":
         help="Number of threads to use",
         default=os.cpu_count(),
     )
+    parser.add_argument(
+        "--ngl",
+        type=int,
+        help="Number of GPU layers to offload when calculating perplexity",
+        default=None,
+    )
 
     # Check if no arguments were provided
     if len(sys.argv) == 1:

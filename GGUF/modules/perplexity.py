@@ -22,7 +22,8 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("perplexity.log")],
 )
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
+MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+GGUF_DIR = os.path.dirname(MODULE_DIR)
 
 
 def extract_ppl_and_drift(output: List[str]) -> Optional[Tuple[float, float]]:
@@ -170,8 +171,9 @@ def calculate_perplexity(
 
     if env_info.get("acceleration") != "cpu":
         ngl_value = getattr(args, "ngl", None)
-        if ngl_value is not None:
-            command_parts.extend(["-ngl", str(ngl_value)])
+        if ngl_value is None:
+            ngl_value = 999
+        command_parts.extend(["-ngl", str(ngl_value)])
         command_parts.append("-fa")
 
     command = " ".join(shlex.quote(part) for part in command_parts)
@@ -225,7 +227,7 @@ def run_perplexity(model_id: str, args: argparse.Namespace) -> Dict[str, Any]:
     if not model_id:
         raise ValueError("model_id is required")
 
-    wikitext_path = "wikitext-2-raw/wiki.test.raw"
+    wikitext_path = os.path.join(GGUF_DIR, "wikitext-2-raw", "wiki.test.raw")
     if not os.path.exists(wikitext_path):
         raise FileNotFoundError(
             f"Wikitext-2 file not found: {wikitext_path}, use llama.cpp/scripts/get-wikitext-2.sh to download"
@@ -234,10 +236,11 @@ def run_perplexity(model_id: str, args: argparse.Namespace) -> Dict[str, Any]:
     imatrix = Imatrix(model_id=model_id)
 
     # Prepare a test dataset if it doesn't exist.
-    test_filepath = f"imatrix/{model_id}.test.txt"
+    test_filepath = os.path.join(GGUF_DIR, "imatrix", f"{model_id}.test.txt")
     if not os.path.exists(test_filepath):
         dataset = imatrix.load_dataset()
         slice = imatrix.select_data_slice(dataset, qty=5000)
+        os.makedirs(os.path.dirname(test_filepath), exist_ok=True)
         with open(test_filepath, "w") as f:
             count = 0
             for example in slice:
@@ -251,7 +254,7 @@ def run_perplexity(model_id: str, args: argparse.Namespace) -> Dict[str, Any]:
 
     logging.info(f"Calculating perplexity of {model_id}")
 
-    model_dir = os.path.join("models", f"{model_id}-GGUF")
+    model_dir = os.path.join(GGUF_DIR, "models", f"{model_id}-GGUF")
     if not os.path.isdir(model_dir):
         raise FileNotFoundError(f"Directory {model_dir} does not exist")
 
