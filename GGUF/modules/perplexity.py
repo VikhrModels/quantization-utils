@@ -10,8 +10,12 @@ import subprocess
 import sys
 import timeit
 from io import TextIOWrapper
+from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from config import get_config
 from modules.imatrix import Imatrix
 from shared import get_environment_info, get_perplexity_command
 from tabulate import tabulate
@@ -159,6 +163,7 @@ def calculate_perplexity(
     perplexity_cmd = get_perplexity_command()
     env_info = get_environment_info()
 
+    ppl_config = get_config().perplexity
     command_parts: List[str] = [
         perplexity_cmd,
         "-m",
@@ -166,15 +171,14 @@ def calculate_perplexity(
         "-f",
         dataset_path,
         "-t",
-        str(getattr(args, "threads", os.cpu_count() or 1)),
+        str(getattr(args, "threads", ppl_config.default_threads)),
     ]
 
     if env_info.get("acceleration") != "cpu":
-        ngl_value = getattr(args, "ngl", None)
-        if ngl_value is None:
-            ngl_value = 999
+        ngl_value = getattr(args, "ngl", ppl_config.default_ngl)
         command_parts.extend(["-ngl", str(ngl_value)])
-        command_parts.extend(["--flash-attn", "on"])
+        if ppl_config.enable_flash_attn:
+            command_parts.extend(["--flash-attn", "on"])
 
     command = " ".join(shlex.quote(part) for part in command_parts)
 
@@ -227,7 +231,8 @@ def run_perplexity(model_id: str, args: argparse.Namespace) -> Dict[str, Any]:
     if not model_id:
         raise ValueError("model_id is required")
 
-    wikitext_path = os.path.join(GGUF_DIR, "wikitext-2-raw", "wiki.test.raw")
+    config = get_config().perplexity
+    wikitext_path = os.path.join(GGUF_DIR, config.wikitext_path)
     if not os.path.exists(wikitext_path):
         raise FileNotFoundError(
             f"Wikitext-2 file not found: {wikitext_path}, use llama.cpp/scripts/get-wikitext-2.sh to download"
@@ -235,11 +240,10 @@ def run_perplexity(model_id: str, args: argparse.Namespace) -> Dict[str, Any]:
 
     imatrix = Imatrix(model_id=model_id)
 
-    # Prepare a test dataset if it doesn't exist.
     test_filepath = os.path.join(GGUF_DIR, "imatrix", f"{model_id}.test.txt")
     if not os.path.exists(test_filepath):
         dataset = imatrix.load_dataset()
-        slice = imatrix.select_data_slice(dataset, qty=5000)
+        slice = imatrix.select_data_slice(dataset, qty=config.sample_size)
         os.makedirs(os.path.dirname(test_filepath), exist_ok=True)
         with open(test_filepath, "w") as f:
             count = 0
@@ -248,7 +252,7 @@ def run_perplexity(model_id: str, args: argparse.Namespace) -> Dict[str, Any]:
                     for conv in example["conversations"]:
                         f.write(conv["value"] or conv["original"] + "\n\n---\n\n")
                     count += 1
-                    if count >= 500:
+                    if count >= config.max_examples:
                         break
         logging.info(f"Wrote {count} examples to {test_filepath}")
 
@@ -369,7 +373,10 @@ if __name__ == "__main__":
         "--quiet", "-q", help="Suppress output other than results", action="store_true"
     )
     parser.add_argument(
-        "-ngl", type=int, help="Number of GPU layers to use", default=999
+        "-ngl",
+        type=int,
+        help="Number of GPU layers to use",
+        default=get_config().perplexity.default_ngl,
     )
     parser.add_argument(
         "--model-id", "-m", type=str, help="Huggingface model ID", required=True

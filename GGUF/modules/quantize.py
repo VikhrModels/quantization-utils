@@ -1,5 +1,11 @@
 import os
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from config import get_config
+from exceptions import QuantizationError
 from git import List
 from shared import LoggerMixin, ModelMixin, Quant, get_quantize_command, run_command
 
@@ -7,6 +13,7 @@ from shared import LoggerMixin, ModelMixin, Quant, get_quantize_command, run_com
 class Quantize(LoggerMixin, ModelMixin):
     def __init__(self, model_id: str, *args, **kwargs):
         super().__init__(model_id=model_id, *args, **kwargs)
+        self.config = get_config().quantization
 
     def quantize_model(
         self,
@@ -18,11 +25,9 @@ class Quantize(LoggerMixin, ModelMixin):
         force: bool = False,
         q4_0_variants: List[str] = [],
     ):
-        # Get the quantize command (will find globally or fallback to local)
         quantize_cmd = get_quantize_command()
         self.info(f"Using quantize binary: {quantize_cmd}")
 
-        # Prevent auto-skip for higher quants if they was explicitly requested
         if base_quant == Quant.F16:
             for quant in [Quant.F16, Quant.BF16, Quant.F32]:
                 if quant not in quants and quant not in quants_skip:
@@ -33,6 +38,7 @@ class Quantize(LoggerMixin, ModelMixin):
             "--imatrix",
             imatrix_filepath,
         ]
+
         for quant in quants:
             if force or not os.path.exists(self.get_quantized_filepath(quant)):
                 variants = [quant.value]
@@ -42,37 +48,28 @@ class Quantize(LoggerMixin, ModelMixin):
                         variants.append(q4_0_variant)
 
                 for variant in variants:
-                    command = [
-                        quantize_cmd,
-                        # Do not use imatrix for upper quants, may lead to lower quality
-                        *(
-                            imatrix_attrs
-                            if quant
-                            in {
-                                Quant.IQ1_M,
-                                Quant.IQ1_S,
-                                Quant.IQ2_XXS,
-                                Quant.IQ2_XS,
-                                Quant.IQ2_S,
-                                Quant.IQ2_M,
-                                Quant.IQ3_XXS,
-                                Quant.IQ3_XS,
-                                Quant.IQ3_S,
-                                Quant.IQ3_M,
-                                Quant.IQ4_NL,
-                                Quant.IQ4_XS,
-                                Quant.Q2_K_S,
-                            }
-                            else []
-                        ),
-                        converted_model_filepath,
-                        self.get_quantized_filepath(quant),
-                        variant,
-                    ]
-                    print(" ".join(command))
+                    try:
+                        command = [
+                            quantize_cmd,
+                            *(
+                                imatrix_attrs
+                                if quant.value in self.config.imatrix_quants
+                                else []
+                            ),
+                            converted_model_filepath,
+                            self.get_quantized_filepath(quant),
+                            variant,
+                        ]
+                        print(" ".join(command))
 
-                    run_command(
-                        self.logger,
-                        command,
-                        ".",
-                    )
+                        run_command(
+                            self.logger,
+                            command,
+                            ".",
+                        )
+                    except Exception as e:
+                        raise QuantizationError(
+                            self.model_id, quant_type=quant.value, reason=str(e)
+                        ) from e
+
+        return True

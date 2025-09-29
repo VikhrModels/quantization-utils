@@ -1,8 +1,15 @@
 import json
 import os
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from exceptions import ModelConversionError
 from huggingface_hub import snapshot_download
+from huggingface_hub.utils import HfHubHTTPError
 from modules.hf_model_helper import HFModelDownloader
+from retry import retry_on_network_error
 from shared import (
     DType,
     LoggerMixin,
@@ -21,12 +28,7 @@ class Convert(LoggerMixin, ModelMixin):
         self.token = token
 
         model_dir = self.get_model_dir()
-        snapshot_download(
-            self.model_id,
-            local_dir=model_dir,
-            token=token,
-            allow_patterns=["config.json"],
-        )
+        self._download_config()
         config_path = os.path.join(model_dir, "config.json")
         if os.path.exists(config_path):
             with open(config_path, "r") as f:
@@ -39,6 +41,22 @@ class Convert(LoggerMixin, ModelMixin):
             self.warning(
                 f"Config file not found at {config_path}, defaulting dtype to {DType.FP32}"
             )
+
+    @retry_on_network_error(
+        max_retries=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(HfHubHTTPError, OSError, TimeoutError),
+    )
+    def _download_config(self):
+        """Download model config with retry logic"""
+        model_dir = self.get_model_dir()
+        snapshot_download(
+            self.model_id,
+            local_dir=model_dir,
+            token=self.token,
+            allow_patterns=["config.json"],
+        )
 
     @property
     def dtype(self) -> DType:
@@ -84,8 +102,14 @@ class Convert(LoggerMixin, ModelMixin):
                     ".",
                 )
         except Exception as e:
-            self.exception(f"Error converting model: {e}")
+            raise ModelConversionError(self.model_id, reason=str(e)) from e
 
+    @retry_on_network_error(
+        max_retries=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(HfHubHTTPError, OSError, TimeoutError),
+    )
     def download_model(self):
         model_dir = self.get_model_dir()
         ensure_dir_exists(model_dir)

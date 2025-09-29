@@ -1,8 +1,16 @@
 import os
 import random
+import sys
 import time
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from config import get_config
 from datasets import load_dataset
+from exceptions import IMatrixCalculationError
+from huggingface_hub.utils import HfHubHTTPError
+from retry import retry_on_network_error
 from shared import (
     LoggerMixin,
     ModelMixin,
@@ -15,13 +23,13 @@ from tqdm import tqdm
 from transformers import AutoTokenizer
 
 GGUF_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-STANDARD_CAL_DATA_DIR = os.path.join(GGUF_DIR, "resources", "standard_cal_data")
 
 
 class Imatrix(LoggerMixin, ModelMixin):
     def __init__(self, model_id: str, *args, **kwargs):
         super().__init__(model_id=model_id, *args, **kwargs)
         self.imatrix_dir = os.path.join(self.cwd, "imatrix")
+        self.config = get_config().imatrix
 
     def get_imatrix_dir(self):
         return os.path.join(self.cwd, "imatrix")
@@ -43,13 +51,19 @@ class Imatrix(LoggerMixin, ModelMixin):
         self.write_imatrix_dataset(slice, tokenizer, filepath)
         self.append_calibration_data()
 
+    @retry_on_network_error(
+        max_retries=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(HfHubHTTPError, OSError, TimeoutError),
+    )
     def load_dataset(self):
-        dataset_id = "Vikhrmodels/Veles-2.5"
+        dataset_id = self.config.default_dataset
         self.logger.info(f"Loading dataset {dataset_id}")
         return load_dataset(dataset_id)
 
     def select_data_slice(self, dataset, qty=None):
-        qty = qty or 1000
+        qty = qty or self.config.sample_qty
         offset = random.randint(0, len(dataset["train"]) - qty)
         self.logger.info(f"Selecting data slice with offset {offset}")
         return (
@@ -58,6 +72,12 @@ class Imatrix(LoggerMixin, ModelMixin):
             .select(range(offset, offset + qty))
         )
 
+    @retry_on_network_error(
+        max_retries=3,
+        delay=1.0,
+        backoff=2.0,
+        exceptions=(HfHubHTTPError, OSError, TimeoutError),
+    )
     def load_tokenizer(self):
         self.logger.info(f"Loading tokenizer for model {self.model_id}")
         return AutoTokenizer.from_pretrained(self.model_id)
@@ -100,10 +120,11 @@ class Imatrix(LoggerMixin, ModelMixin):
                 f.write(chat + "\n")
 
     def append_calibration_data(self):
-        self.logger.info(f"Reading all files from directory {STANDARD_CAL_DATA_DIR}")
+        calibration_dir = os.path.join(GGUF_DIR, self.config.calibration_data_dir)
+        self.logger.info(f"Reading all files from directory {calibration_dir}")
         with open(self.get_imatrix_dataset_filepath(), "a") as f:
-            for filename in os.listdir(STANDARD_CAL_DATA_DIR):
-                file_path = os.path.join(STANDARD_CAL_DATA_DIR, filename)
+            for filename in os.listdir(calibration_dir):
+                file_path = os.path.join(calibration_dir, filename)
                 if os.path.isfile(file_path):
                     self.logger.info(f"Reading file {file_path}")
                     with open(file_path, "r") as cal_file:
@@ -131,21 +152,21 @@ class Imatrix(LoggerMixin, ModelMixin):
             ]
 
             if not is_cpu:
-                command.extend(["-ngl", "32"])
+                command.extend(["-ngl", str(self.config.gpu_layers)])
 
             tail_args = [
                 "-c",
-                "512",
+                str(self.config.context_size),
                 "-b",
-                "512",
+                str(self.config.batch_size),
                 "--chunks",
-                "1024",
+                str(self.config.chunks),
             ]
 
             if not is_cpu:
                 tail_args.extend(["--flash-attn", "on"])
 
-            tail_args.extend(["--temp", "0.25"])
+            tail_args.extend(["--temp", str(self.config.temperature)])
             command.extend(tail_args)
 
             run_command(
@@ -154,5 +175,4 @@ class Imatrix(LoggerMixin, ModelMixin):
                 ".",
             )
         except Exception as e:
-            self.logger.error(f"Error calculating imatrix: {e}")
-            raise
+            raise IMatrixCalculationError(self.model_id, reason=str(e)) from e
