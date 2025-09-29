@@ -291,6 +291,8 @@ def run_command(logger: logging.Logger, command: List[str], cwd: str = "."):
         stderr=subprocess.PIPE,
         universal_newlines=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
     )
 
