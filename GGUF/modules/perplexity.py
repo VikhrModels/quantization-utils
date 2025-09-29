@@ -8,11 +8,12 @@ import select
 import subprocess
 import sys
 import timeit
+import shlex
 from io import TextIOWrapper
 from typing import Any, Dict, Generator, List, Optional, Tuple, Union
 
 from modules.imatrix import Imatrix
-from shared import get_perplexity_command
+from shared import get_environment_info, get_perplexity_command
 from tabulate import tabulate
 
 logging.basicConfig(
@@ -155,7 +156,25 @@ def calculate_perplexity(
         return loaded_data["perplexity"][dataset_name][model_quant_id]
 
     perplexity_cmd = get_perplexity_command()
-    command = f"{perplexity_cmd} -ngl {args.ngl} -m {file} -f {dataset_path} -t {args.threads} -fa"
+    env_info = get_environment_info()
+
+    command_parts: List[str] = [
+        perplexity_cmd,
+        "-m",
+        file,
+        "-f",
+        dataset_path,
+        "-t",
+        str(getattr(args, "threads", os.cpu_count() or 1)),
+    ]
+
+    if env_info.get("acceleration") != "cpu":
+        ngl_value = getattr(args, "ngl", None)
+        if ngl_value is not None:
+            command_parts.extend(["-ngl", str(ngl_value)])
+        command_parts.append("-fa")
+
+    command = " ".join(shlex.quote(part) for part in command_parts)
 
     output = []
     execution_time = None

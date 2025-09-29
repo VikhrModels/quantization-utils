@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 from enum import Enum
+from functools import lru_cache
 from pathlib import Path
 from typing import AnyStr, List
 
@@ -199,6 +200,7 @@ class ModelMixin:
     def __init__(self, model_id, cwd=None, *args, **kwargs):
         self._model_id = model_id
         self._cwd = cwd or os.getcwd()
+        self._environment = get_environment_info()
         super().__init__(*args, **kwargs)
 
     @property
@@ -224,6 +226,17 @@ class ModelMixin:
             self.get_model_dir() + "-GGUF",
             f"{self.get_model_name()}-{quant.value}.gguf",
         )
+
+    @property
+    def environment(self):
+        return self._environment
+
+    @property
+    def acceleration(self):
+        return self._environment.get("acceleration", "cpu")
+
+    def is_cpu_environment(self) -> bool:
+        return self.acceleration == "cpu"
 
 
 class LoggerMixin:
@@ -360,6 +373,12 @@ def detect_environment():
         info["acceleration"] = "metal"
 
     return info
+
+
+@lru_cache(maxsize=1)
+def get_environment_info():
+    """Cached environment lookup"""
+    return detect_environment()
 
 
 def validate_environment(logger: logging.Logger):

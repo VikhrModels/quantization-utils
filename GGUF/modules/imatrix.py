@@ -119,29 +119,38 @@ class Imatrix(LoggerMixin, ModelMixin):
 
             imatrix_cmd = get_imatrix_command()
             self.logger.info(f"Using imatrix binary: {imatrix_cmd}")
+            is_cpu = self.is_cpu_environment()
+            command = [
+                imatrix_cmd,
+                "-m",
+                self.get_quantized_filepath(quant=base_quant),
+                "-f",
+                self.get_imatrix_dataset_filepath(),
+                "-o",
+                self.get_imatrix_filepath(),
+            ]
+
+            if not is_cpu:
+                command.extend(["-ngl", "32"])
+
+            tail_args = [
+                "-c",
+                "512",
+                "-b",
+                "512",
+                "--chunks",
+                "1024",
+            ]
+
+            if not is_cpu:
+                tail_args.append("-fa")
+
+            tail_args.extend(["--temp", "0.25"])
+            command.extend(tail_args)
 
             run_command(
                 self.logger,
-                [
-                    imatrix_cmd,
-                    "-m",
-                    self.get_quantized_filepath(quant=base_quant),
-                    "-f",
-                    self.get_imatrix_dataset_filepath(),
-                    "-o",
-                    self.get_imatrix_filepath(),
-                    "-ngl",
-                    "32",
-                    "-c",
-                    "512",
-                    "-b",
-                    "512",
-                    "--chunks",
-                    "1024",
-                    "-fa",
-                    "--temp",
-                    "0.25",
-                ],
+                command,
                 ".",
             )
         except Exception as e:
